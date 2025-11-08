@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "custom_interfaces__py",
+		"source" : "/home/john/ros2_ws_winter_devlin/build/custom_interfaces/custom_interfaces__py"
+	}
+}

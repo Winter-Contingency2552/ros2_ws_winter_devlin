@@ -1,0 +1,6 @@
+{
+  "package_name": "custom_interfaces",
+  "non_idl_tuples": [
+    "/home/john/ros2_ws_winter_devlin/src/custom_interfaces:srv/ResetPosition.srv"
+  ]
+}

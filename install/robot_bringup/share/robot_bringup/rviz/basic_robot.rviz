@@ -1,0 +1,29 @@
+Visualization Manager:
+  Class: ""
+  Name: "Visualization Manager"
+  Displays:
+    - Name: "RobotModel"
+      Class: "rviz_default_plugins/RobotModel"
+      Enabled: true
+      Robot Description: "robot_description"
+      TF Prefix: ""
+      Alpha: 1.0
+    - Name: "Grid"
+      Class: "rviz_default_plugins/Grid"
+      Enabled: true
+      Color: [160, 160, 160]
+      Cell Size: 1.0
+      Cell Count: 10
+      Plane: "XY"
+  Global Options:
+    Fixed Frame: "base_link"
+  Tools:
+    - Class: "rviz_default_plugins/Interact"
+    - Class: "rviz_default_plugins/MoveCamera"
+  Views:
+    Current:
+      Class: "rviz_default_plugins/Orbit"
+      Focal Point: [0.0, 0.0, 0.0]
+      Distance: 1.5
+      Yaw: 0.0
+      Pitch: 0.0
