@@ -16,29 +16,17 @@ Root workspace (ros2_ws_winter_devlin)
 
 /home/john/ros2_ws_winter_devlin
 ├── src
-
 │   ├── custom_interfaces
-
 │   │   └── srv/
-
 │   ├── robot_bringup
-
 │   │   ├── launch/
-
 │   │   ├── urdf/
-
 │   │   └── rviz/
-
 │   ├── robot_simulator_cpp
-
 │   │   └── src/
-
 │   └── ... (other packages or nodes)
-
 ├── build/
-
 ├── install/
-
 └── log/
 
 
