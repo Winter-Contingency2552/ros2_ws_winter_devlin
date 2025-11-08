@@ -82,6 +82,7 @@ PACKAGE SUMMARIES
 - custom_interfaces — contains .srv definitions used by other packages.
 - robot_bringup — provides launch files, the URDF model, RViz configurations, and Python controller/teleop nodes.
 - robot_simulator_cpp — contains the C++ odometry node and other simulation-related C++ code.
+- robot_simulator_py — contains controller node that impliments navigation logic
 
 TROUBLESHOOTING
 ---------------
