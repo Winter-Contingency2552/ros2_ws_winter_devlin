@@ -16,7 +16,6 @@ Root workspace (ros2_ws_winter_devlin)
 
 /home/john/ros2_ws_winter_devlin
 ├── src
-│
 │   ├── custom_interfaces
 │   │   └── srv/
 │   ├── robot_bringup
