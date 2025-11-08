@@ -19,13 +19,19 @@ Root workspace (ros2_ws_winter_devlin)
 ├── src
 │   ├── custom_interfaces
 │   │   └── srv/
+│   │   │   └── resetPosition.srv
 │   ├── robot_bringup
 │   │   ├── launch/
+│   │   │   └── robot_simulation.launch.py
+│   │   │   └── robot_teleop.launch.py
 │   │   ├── urdf/
 │   │   └── rviz/
 │   ├── robot_simulator_cpp
 │   │   └── src/
-│   └── ... (other packages or nodes)
+│   │   │   └── publisher_member_function.cpp
+│   └── robot_simmulator_py
+│   │   └── robot_simmulator_py
+│   │   │   └── controller_node.py
 ├── build/
 ├── install/
 └── log/
