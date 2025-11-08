@@ -14,6 +14,7 @@ PROJECT FOLDER STRUCTURE
 ------------------------
 Root workspace (ros2_ws_winter_devlin)
 
+```
 /home/john/ros2_ws_winter_devlin
 ├── src
 │   ├── custom_interfaces
@@ -28,6 +29,7 @@ Root workspace (ros2_ws_winter_devlin)
 ├── build/
 ├── install/
 └── log/
+```
 
 
 
