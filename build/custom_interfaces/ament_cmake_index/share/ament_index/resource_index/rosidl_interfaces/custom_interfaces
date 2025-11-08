@@ -1,4 +1,0 @@
-srv/ResetPosition.idl
-srv/ResetPosition.srv
-srv/ResetPosition_Request.msg
-srv/ResetPosition_Response.msg
