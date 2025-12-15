@@ -1,9 +1,11 @@
 # Ignore everything
 *
 
-# But not these files/folders
-!README.md
-!src/
+# Allow root files
 !.gitignore
+!README.md
 !README_ANSWERS.md
 
+# Allow src directory and its contents
+!src/
+!src/**
