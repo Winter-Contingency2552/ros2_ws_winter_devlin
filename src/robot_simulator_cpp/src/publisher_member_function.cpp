@@ -127,7 +127,7 @@ private:
     publisher_->sendTransform(t);
 
     // Print out the tf for debugging (10 Hz)
-    RCLCPP_INFO(this->get_logger(), "Publishing Transform: x: '%.2f', y: '%.2f', th: '%.2f'", x_, y_, th_);
+    // RCLCPP_INFO(this->get_logger(), "Publishing Transform: x: '%.2f', y: '%.2f', th: '%.2f'", x_, y_, th_);
   }
   rclcpp::TimerBase::SharedPtr timer_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> publisher_;
@@ -140,7 +140,7 @@ private:
   {
     vx_ = msg_cmd->linear.x;
     vth_ = msg_cmd->angular.z;
-    RCLCPP_INFO(this->get_logger(), "I heard: linear x: '%.2f', angular z: '%.2f'", msg_cmd->linear.x, msg_cmd->angular.z);
+    // RCLCPP_INFO(this->get_logger(), "I heard: linear x: '%.2f', angular z: '%.2f'", msg_cmd->linear.x, msg_cmd->angular.z);
   }
 
   void handle_reset_position(
@@ -155,7 +155,7 @@ private:
     double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
     th_ = std::atan2(siny_cosp, cosy_cosp);
 
-    RCLCPP_INFO(this->get_logger(), "Position reset to x: '%.2f', y: '%.2f', th: '%.2f'", x_, y_, th_);
+    // RCLCPP_INFO(this->get_logger(), "Position reset to x: '%.2f', y: '%.2f', th: '%.2f'", x_, y_, th_);
     response->success = true;
   }
   rclcpp::Service<custom_interfaces::srv::ResetPosition>::SharedPtr reset_position_service_;
