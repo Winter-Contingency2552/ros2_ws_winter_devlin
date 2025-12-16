@@ -71,7 +71,7 @@ class ControllerNode(Node):
 
     def control_loop(self):
         try:
-            tf = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time())
+            tf = self.tf_buffer.lookup_transform('world', 'base_link', rclpy.time.Time())
 
         except (LookupException, ConnectivityException, ExtrapolationException):
             self.get_logger().warn('TF lookup failed. Retrying...')

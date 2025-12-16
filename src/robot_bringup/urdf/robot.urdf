@@ -2,7 +2,7 @@
 <robot name="simple_robot">
 
   <!-- Global reference frame -->
-  <link name="odom"/>
+  <link name="world"/>
 
   <!-- Base of the robot (flat blue cylinder) -->
   <link name="base_link">
@@ -28,9 +28,9 @@
     </visual>
   </link>
 
-  <!-- Joint connecting odom to base -->
-  <joint name="odom_to_base" type="fixed">
-    <parent link="odom"/>
+  <!-- Joint connecting world to base -->
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
     <child link="base_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>

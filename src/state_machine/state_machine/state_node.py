@@ -47,11 +47,11 @@ class ControllerNode(Node):
         self.goal_points = [self.gp1, self.gp2, self.gp3, self.gp4]
         self.extra_distance = 0.35 # meters to overshoot each goal point
         self.check_distance = 1.5 # meters to turn to check for markers on wall
-        self.speed = 0.5 # m/s
-        self.angular_speed = 0.5 # rad/s
+        self.speed = 2.0 # m/s
+        self.angular_speed = 2.0 # rad/s
         self.accumulated_angle = 0.0
 
-        self.pos_tol = 0.01 # [m] tolerance for position
+        self.pos_tol = 0.05 # [m] tolerance for position
         self.ang_tol = math.radians(0.1) # [rad] tolerance for angle
 
         self.init_x = 0.0
@@ -131,7 +131,7 @@ class ControllerNode(Node):
 
     def control_loop(self):
         try:
-            tf = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time())
+            tf = self.tf_buffer.lookup_transform('world', 'base_link', rclpy.time.Time())
 
         except (LookupException, ConnectivityException, ExtrapolationException):
             self.get_logger().warn('TF lookup failed. Retrying...')
