@@ -15,13 +15,13 @@ from lightglue.utils import load_image, rbd
 
 class FeatureCorrespondence(Node):
     def __init__ (self):
-        super(). __init__('feature_correspondence_node')
+        super(). __init__('feature_correspondance_node')
         self.bridge=CvBridge()
         self. camera_sub1=self.create_subscription(Image,'image1',self.image1_callback,10  )
         self. camera_sub2=self.create_subscription(Image,'image2',self.image2_callback,10  )
         self.create_subscription(Bool, "/run_feature_correspondence", self.run_callback, 10)
         self.create_subscription(Bool, "/run_feature_correspondence_bonus", self.run_callback, 10)
-        self.state_message=self.create_publisher(String, '/robot_report')
+        self.state_message=self.create_publisher(String, '/robot_report',qos_profile=10 )
         self.run=False
         self.run_bonus=False
         self.img1=None
