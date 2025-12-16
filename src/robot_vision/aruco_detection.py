@@ -6,6 +6,8 @@ from cv_bridge import CvBridge
 import cv2
 import cv2.aruco as aruco
 import numpy as np
+from geometry_msgs.msg import PointStamped
+import tf2_geometry_msgs
 class uruco(Node):
     def __init__(self):
         super().__init__('aruco_detector_node')
@@ -19,7 +21,7 @@ class uruco(Node):
         self.K = None
         self.distanceCoefficients = np.zeros((5,1))
         self.number_of_markers = 0
-        self.run = False
+        self.run = False #decides whether detection runs or not
 
     def camera_intrinsics(self, intrinsics_msg):
         intrinsics = intrinsics_msg.data.split(',')
@@ -65,8 +67,14 @@ class uruco(Node):
             
             aruco.drawDetectedMarkers(frame, corners, ids)
             print("Detected IDs:", ids)
-            
-            report = "aruco "+ str(ids.flatten().tolist())+ " in position x: "+ str(x)+" y: "+ str(y)+ " z: "+ str(z)
+            local_point = PointStamped()
+            local_point.header.frame_id = 'base_link'
+            local_point.header.stamp = rclpy.time.Time().to_msg()
+            local_point.point.x = x
+            local_point.point.y = y
+            local_point.point.z = z
+            global_point = self.tf_buffer.transform(local_point, 'odom', timeout=rclpy.duration.Duration(seconds=1.0))
+            report = "aruco "+ str(ids.flatten().tolist())+ " in position x: "+ str(global_point.point.x)+" y: "+ str(global_point.point.y)+ " z: "+ str(global_point.point.z)
             msg_str = String()
             msg_str.data = report
             self.pub.publish(msg_str)
