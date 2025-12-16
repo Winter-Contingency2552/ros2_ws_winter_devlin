@@ -43,6 +43,12 @@ def launch_setup(context, *args, **kwargs):
             output='screen'
         ),
         Node(
+            package='feature_correspondance',
+            executable='feature_correspondence_node',
+            name='feature_correspondence_node',
+            output='screen'
+        ),
+        Node(
             package='state_machine',
             executable='state_node',
             name='controller_node',
