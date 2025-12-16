@@ -1,7 +1,7 @@
 import rclpy 
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
-from std_msgs.msg import String
+from std_msgs.msg import String,Bool
 from cv_bridge import CvBridge
 import cv2
 import cv2.aruco as aruco
@@ -12,12 +12,14 @@ class uruco(Node):
         self.bridge = CvBridge()
         self.sub1 = self.create_subscription(Image, '/camera1/image_raw', self.image_callback, 10)
         self.sub2 = self.create_subscription(String, '/camera1/image_info', self.camera_intrinsics, 10) 
+        self.create_subscription(Bool, "/run_aruco_detection", self.start_callback, 10)
         self.pub = self.create_publisher(String, '/robot_report', 10)   
-        self.aruco_pub = self.create_publisher(String, '/aruco_report', 10)
+        self.aruco_pub = self.create_publisher(String, '/aruco_report', 10)# this should publish the number of makrers detected so far
         self.markerLength = 0.2 
         self.K = None
         self.distanceCoefficients = np.zeros((5,1))
         self.number_of_markers = 0
+        self.run = False
 
     def camera_intrinsics(self, intrinsics_msg):
         intrinsics = intrinsics_msg.data.split(',')
@@ -29,8 +31,16 @@ class uruco(Node):
                       [0, fy, cy],
                       [0,  0,  1]])
         self.distanceCoefficients = np.zeros((5,1)) 
+    def run_callback(self, msg):
+        if msg.data:
+            self.get_logger().info("Aruco detection started")
+            self.run=True
+        else:
+            self.get_logger().info("Aruco detection stopped")
 
     def image_callback(self, msg):
+        if not self.run:
+            return
         self.get_logger().info("Received an image!")
         if self.K is None:
             self.get_logger().warn("Camera intrinsics not received yet")
