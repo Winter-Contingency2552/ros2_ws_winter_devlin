@@ -2,9 +2,7 @@
 *
 
 # Allow root files
-# Allow root files
 !.gitignore
-!README.md
 !README.md
 !README_ANSWERS.md
 

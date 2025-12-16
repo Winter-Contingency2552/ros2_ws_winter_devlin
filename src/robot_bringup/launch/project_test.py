@@ -35,8 +35,7 @@ def launch_setup(context, *args, **kwargs):
             executable='odometry_node',
             name='odometry_node',
             output='screen'
-        )
-        ,
+        ),
         Node(
             package='aruco_detection',
             executable='aruco_detector_node',
@@ -44,10 +43,9 @@ def launch_setup(context, *args, **kwargs):
             output='screen'
         ),
         Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            name='teleop_keyboard',
-            prefix='gnome-terminal -- ',
+            package='state_machine',
+            executable='state_node',
+            name='controller_node',
             output='screen'
         )
     ]

@@ -82,7 +82,7 @@ private:
     // Build one TransformStamped message
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = now; // Required
-    t.header.frame_id = "odom"; // Parent frame
+    t.header.frame_id = "world"; // Parent frame
     t.child_frame_id = "base_link"; // Child frame
 
     // Translation Structure
@@ -98,7 +98,7 @@ private:
     // Publish Odometry
     auto odom = nav_msgs::msg::Odometry();
     odom.header.stamp = now;
-    odom.header.frame_id = "odom";
+    odom.header.frame_id = "world";
     odom.child_frame_id = "base_link";
     odom.pose.pose.position.x = x_;
     odom.pose.pose.position.y = y_;
@@ -116,10 +116,10 @@ private:
     // Publish Path
     auto p = geometry_msgs::msg::PoseStamped();
     p.header.stamp = now;
-    p.header.frame_id = "odom";
+    p.header.frame_id = "world";
     p.pose = odom.pose.pose;
     path_msg_.header.stamp = now;
-    path_msg_.header.frame_id = "odom";
+    path_msg_.header.frame_id = "world";
     path_msg_.poses.push_back(p);
     publisher_path_->publish(path_msg_);
 
