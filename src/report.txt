@@ -1,0 +1,35 @@
+Title: Integrated ROS2 Mobile Robot Simulation
+
+Author: Devlin Winter
+
+Abstract
+
+This report details the architecture and logic of a ROS2 workspace designed for a simulated mobile robot. The system integrates C++ and Python nodes within a structured, multi-package environment. Key components include a C++ node for performance-critical odometry calculation and transform broadcasting, and a Python node for high-level control logic. A custom service interface allows for resetting the robot's position. The entire system is orchestrated by a central bringup package, which includes a URDF model, RViz visualization, and a master launch file to demonstrate a cohesive simulation of a robot navigating a predefined path.
+
+Introduction
+
+The Robot Operating System (ROS) provides a powerful framework for developing complex robotic systems. This project leverages ROS2 (Humble) to construct a workspace that demonstrates best practices in package organization and internode communication. The primary objective is to simulate a mobile robot by separating concerns into distinct packages: `custom_interfaces` for service definitions, `robot_simulator_cpp` for a performance-critical odometry node, `robot_simulator_py` for control logic, and `robot_bringup` for system integration and visualization. This structure showcases the flexible, multi-language capabilities of ROS2.
+
+Node and Package Logic Description
+
+The system's functionality is distributed across four distinct ROS2 packages.
+
+Custom Service Definition (custom_interfaces)
+
+To facilitate external control over the robot's state, a custom service is defined in the `custom_interfaces` package. The `ResetPosition.srv` service definition allows a client to reset the robot's simulated position. It takes a `geometry_msgs/Pose` as the request and returns a boolean `success` flag in the response. This is crucial for testing and re-initializing the simulation state without restarting the entire system.
+
+C++ Odometry Node (robot_simulator_cpp)
+
+The `robot_simulator_cpp` package contains the `odometry_node`, a C++ node responsible for the robot's state estimation. The node subscribes to the `/cmd_vel` topic to receive velocity commands. Based on these commands and the time elapsed, it continuously integrates the robot's pose. It then acts as a `tf2` broadcaster, publishing the dynamic `odom -> base_link` transform to the `/tf` topic. This node also hosts the `ResetPosition` service server, allowing it to update its internal pose based on external requests.
+
+Python Controller Node (robot_simulator_py)
+
+The `robot_simulator_py` package contains the `controller_node`, a Python node that implements the robot's navigation logic. It uses a `tf2` listener to get the robot's current pose from the `/tf` topic, providing feedback for closed-loop control. The node implements a state machine to guide the robot in a precise 2-meter by 2-meter square, alternating between driving straight and turning based on pose thresholds. It publishes `Twist` messages to the `/cmd_vel` topic to move the robot.
+
+System Integration (robot_bringup)
+
+The `robot_bringup` package serves as the central point for launching and visualizing the entire simulation. It contains a URDF file defining the robot's structure and an RViz configuration file for visualization. A master launch file, `robot_simulation.launch.py`, orchestrates the system startup by launching the C++ `odometry_node`, the Python `controller_node`, a `robot_state_publisher` for static transforms from the URDF, and the `rviz2` visualization tool.
+
+Conclusion
+
+This project successfully demonstrates the creation of a structured, multi-package ROS2 application. By separating C++-based state estimation from Python-based control logic and integrating them through standard ROS2 topics and a custom service, the system exemplifies a robust and modular design pattern common in modern robotics. The use of a bringup package for system-level orchestration and visualization further highlights a comprehensive approach to developing and managing complex robotic simulations.
