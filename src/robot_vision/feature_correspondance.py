@@ -18,18 +18,18 @@ class FeatureCorrespondence(Node):
         self.run=False
         self.img1=None
         self.img2=None
-        def image1_callback(self,msg):
+    def image1_callback(self,msg):
             self.img1=self.bridge.imgmsg_to_cv2(msg,"bgr8")
 
-        def image2_callback(self,msg):
+    def image2_callback(self,msg):
             self.img2=self.bridge.imgmsg_to_cv2(msg,"bgr8")
         
-        def run_callback(self,msg):
+    def run_callback(self,msg):
             if msg.data:
                 self.run=True
                 self.get_logger().info("Feature correspondence started")
         
-        def process_images(self):
+    def process_images(self):
             if not self.run:
                 return
             if self.img1 is None or self.img2 is None:
@@ -59,7 +59,12 @@ class FeatureCorrespondence(Node):
             # Lowe's ratio test
             good = [m for m,n in matches if m.distance < 0.7 * n.distance]
             #good = [m for m,n in matches if m.distance < 0.2 * n.distance]
-
+            for match in good:
+                msg_str = String()
+                point_in_image1=kp1[match.queryIdx].pt
+                point_in_image2=kp2[match.trainIdx].pt
+                msg_str.data = f"Movement at x: {point_in_image1[0]}, y: {point_in_image1[1]}"
+                self.state_message.publish(msg_str)
             img_matches = cv2.drawMatches(self.img1, kp1, self.img2, kp2, good, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             cv2.imshow('SURF matches', img_matches)
             cv2.waitKey(0)
