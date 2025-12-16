@@ -13,9 +13,11 @@ class uruco(Node):
         self.sub1 = self.create_subscription(Image, '/camera1/image_raw', self.image_callback, 10)
         self.sub2 = self.create_subscription(String, '/camera1/image_info', self.camera_intrinsics, 10) 
         self.pub = self.create_publisher(String, '/robot_report', 10)   
+        self.aruco_pub = self.create_publisher(String, '/aruco_report', 10)
         self.markerLength = 0.2 
         self.K = None
         self.distanceCoefficients = np.zeros((5,1))
+        self.number_of_markers = 0
 
     def camera_intrinsics(self, intrinsics_msg):
         intrinsics = intrinsics_msg.data.split(',')
@@ -58,6 +60,8 @@ class uruco(Node):
             msg_str = String()
             msg_str.data = report
             self.pub.publish(msg_str)
+            self.number_of_markers += len(ids)
+            self.aruco_pub.publish(String(data=str(self.number_of_markers)))
 
 def main(args=None):
     rclpy.init(args=args)
