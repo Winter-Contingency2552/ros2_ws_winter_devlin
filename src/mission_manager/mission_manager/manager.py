@@ -11,9 +11,9 @@ from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityExce
 from aruco_interfaces.msg import ArucoMarkerArray
 from std_msgs.msg import Bool
 
-class ControllerNode(Node):
+class ManagerNode(Node):
     def __init__(self):
-        super().__init__('controller_node')
+        super().__init__('manager_node')
 
         # Create publisher for cmd_vel
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
