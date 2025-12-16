@@ -56,8 +56,8 @@ class ArucoDetectorNode(Node):
 
         # ArUco setup (OpenCV 4.5+ compatible)
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
-        self.aruco_params = aruco.DetectorParameters_create()
-
+        #self.aruco_params = aruco.DetectorParameters_create()
+        self.aruco_params = aruco.DetectorParameters()
         self.seen_markers = []
 
         self.get_logger().info(f"Listening to {image_topic} and {camera_info_topic}")
