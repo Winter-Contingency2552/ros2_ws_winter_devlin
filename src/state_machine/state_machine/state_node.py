@@ -96,6 +96,7 @@ class ControllerNode(Node):
         self.angle_correction_target_yaw = None  # Target yaw for 5-degree clockwise spin
         self.wall_orientation_complete = False  # Flag to track if initial wall orientation is done
         self.waiting_for_angle_feedback = False  # Flag to track if we're waiting for evaluator
+        self.walloffset = 0.1  # meters to overshoot each goal point
 
     # ---- Helpful Functions ---- #
     
@@ -541,16 +542,16 @@ class ControllerNode(Node):
                     angle_from_origin = math.degrees(math.atan2(goal_y, goal_x))
                     if -31 <= angle_from_origin <= 31:
                         # Front Wall
-                        goal_x -= 0.35
+                        goal_x -= self.walloffset
                     elif -148 <= angle_from_origin <= -32:
                         # Right Wall
-                        goal_y += 0.35
+                        goal_y += self.walloffset
                     elif angle_from_origin >= 149 or angle_from_origin <= -149:
                         # Back Wall
-                        goal_x += 0.35
+                        goal_x += self.walloffset
                     elif 32 <= angle_from_origin <= 148:
                         # Left Wall
-                        goal_y -= 0.35
+                        goal_y -= self.walloffset
                     pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
                     dx = goal_x - x
                     dy = goal_y - y
