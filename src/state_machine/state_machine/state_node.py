@@ -7,6 +7,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 import tf2_ros
 import math
+import re
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
 from aruco_interfaces.msg import ArucoMarkerArray
 from std_msgs.msg import Bool,String
@@ -84,7 +85,16 @@ class ControllerNode(Node):
         self.search=True
         self.image_analysis_sent = False
         self.image_analysis_count = 0
-        self.feature_correspondence_complete = False  # Add this flag
+        self.feature_correspondence_complete = False
+
+        # Angle correction variables
+        self.evaluator_angle_error = None  # Parsed angle error from evaluator (degrees)
+        self.evaluator_message_received = False
+        self.marker_goal_x = 0.0  # Store marker goal position
+        self.marker_goal_y = 0.0
+        self.angle_correction_target_yaw = None  # Target yaw for 5-degree clockwise spin
+        self.wall_orientation_complete = False  # Flag to track if initial wall orientation is done
+        self.waiting_for_angle_feedback = False  # Flag to track if we're waiting for evaluator
 
     # ---- Helpful Functions ---- #
     
@@ -178,7 +188,18 @@ class ControllerNode(Node):
             self.search=False
 
     def evaluator_callback(self, msg: String):
-        self.marker_location_from_evaluator = msg.data  
+        self.marker_location_from_evaluator = msg.data
+        
+        # Parse angle error from evaluator message
+        # Expected format: "aruco X xy_error=0.XXXm angle=XX.Xdeg PASSED/FAILED"
+        match = re.search(r'angle=([\d.]+)deg', msg.data)
+        if match:
+            try:
+                self.evaluator_angle_error = float(match.group(1))
+                self.evaluator_message_received = True
+                self.get_logger().info(f'Parsed angle_error from evaluator: {self.evaluator_angle_error:.1f} deg')
+            except ValueError:
+                self.get_logger().warn(f'Could not parse angle value from: {msg.data}')
 
     def feature_complete_callback(self, msg: Bool):
         """Callback for when feature correspondence completes"""
@@ -451,9 +472,12 @@ class ControllerNode(Node):
                 marker_pos = self.go_to_marker(self.target_marker_id)
                 if marker_pos is None:
                     self.get_logger().warn('Target marker not found, skipping.')
-                    self.state = 'ReturnToStart'  # Changed from 'NextState'
+                    self.state = 'ReturnToStart'
                 else:
                     goal_x, goal_y = marker_pos
+                    # Store marker goal position for wall orientation
+                    self.marker_goal_x = goal_x
+                    self.marker_goal_y = goal_y
 
                     pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
                     dx = goal_x - x
@@ -466,15 +490,115 @@ class ControllerNode(Node):
                         report_msg.data = f'arrived to {self.target_marker_id}'
                         self.report_publisher.publish(report_msg)
                         
+                        # Reset angle correction state
+                        self.evaluator_message_received = False
+                        self.evaluator_angle_error = None
+                        self.angle_correction_target_yaw = None
+                        self.wall_orientation_complete = False
+                        self.waiting_for_angle_feedback = False
 
-                        self.state = 'image_analysis'
+                        self.state = 'OrientToWall'
                     else:
                         cmd.linear.x = pid_navigate_cmd.linear.x
                         cmd.angular.z = pid_navigate_cmd.angular.z
                         self.publisher_.publish(cmd)
 
                         
+        elif self.state == 'OrientToWall': # this is the most hacky crap
+            self.get_logger().info('=== In OrientToWall state ===')
+            self.stop_robot()
+            
+            # Determine target heading based on marker position
+            # x < -2.75: face left wall (heading = -90 deg = -pi/2)
+            # y < -4.75: face bottom wall (heading = -180 deg = pi or -pi)
+            # x > 2.75: face right wall (heading = 0 deg)
+            # y > 4.75: face top wall (heading = 90 deg = pi/2)
+            
+            if self.marker_goal_x < -2.75:
+                target_heading = -math.pi / 2  # -90 degrees
+                self.get_logger().info('Orienting to LEFT wall (heading = -90 deg)')
+            elif self.marker_goal_y < -4.75:
+                target_heading = math.pi  # -180 degrees (same as 180)
+                self.get_logger().info('Orienting to BOTTOM wall (heading = -180 deg)')
+            elif self.marker_goal_x > 2.75:
+                target_heading = 0.0  # 0 degrees
+                self.get_logger().info('Orienting to RIGHT wall (heading = 0 deg)')
+            elif self.marker_goal_y > 4.75:
+                target_heading = math.pi / 2  # 90 degrees
+                self.get_logger().info('Orienting to TOP wall (heading = 90 deg)')
+            else:
+                # Default: no specific wall, skip orientation
+                self.get_logger().info('Marker not near wall boundary, skipping orientation')
+                self.state = 'image_analysis'
+                return
+            
+            # Phase 1: First orient to the predicted wall heading
+            if not self.wall_orientation_complete:
+                target_x = x + math.cos(target_heading)
+                target_y = y + math.sin(target_heading)
+                yaw_diff = self.angle_diff(target_heading, yaw)
+                
+                if abs(yaw_diff) <= self.ang_tol:
+                    self.stop_robot()
+                    self.get_logger().info(f'Initial wall orientation complete. Current yaw: {math.degrees(yaw):.1f} deg')
+                    self.wall_orientation_complete = True
+                    # Report position to get angle feedback from evaluator
+                    report_msg = String()
+                    report_msg.data = f'arrived to {self.target_marker_id}'
+                    self.report_publisher.publish(report_msg)
+                    self.waiting_for_angle_feedback = True
+                    self.evaluator_message_received = False
+                else:
+                    p_orient_cmd = self.p_orient(x, y, yaw, target_x, target_y)
+                    cmd.linear.x = p_orient_cmd.linear.x
+                    cmd.angular.z = p_orient_cmd.angular.z
+                    self.publisher_.publish(cmd)
+                return
+            
+            # Phase 2: Wait for evaluator feedback
+            if self.waiting_for_angle_feedback and not self.evaluator_message_received:
+                self.stop_robot()
+                self.get_logger().info('Waiting for evaluator angle feedback...')
+                return
+            
+            # Phase 3: Check angle error and spin if needed
+            if self.evaluator_message_received:
+                if self.evaluator_angle_error is not None and self.evaluator_angle_error > 10.0:
+                    report_msg = String()
+                    report_msg.data = f'arrived to {self.target_marker_id}'
+                    self.report_publisher.publish(report_msg)
+                    self.get_logger().info(f'Angle error {self.evaluator_angle_error:.1f} deg > 10 deg, spinning 5 deg clockwise')
                     
+                    # If we don't have a target yaw yet, calculate it (5 degrees clockwise = -5 degrees)
+                    if self.angle_correction_target_yaw is None:
+                        self.angle_correction_target_yaw = self.wrap_to_pi(yaw - math.radians(5.0))
+                        self.get_logger().info(f'Set correction target yaw: {math.degrees(self.angle_correction_target_yaw):.1f} deg')
+                    
+                    # Check if we've reached the target yaw
+                    yaw_diff = abs(self.angle_diff(self.angle_correction_target_yaw, yaw))
+                    if yaw_diff <= self.ang_tol:
+                        # Reached 5-degree increment, report position again to get new angle error
+                        self.stop_robot()
+                        self.get_logger().info('Completed 5 deg clockwise spin, reporting position')
+                        report_msg = String()
+                        report_msg.data = f'arrived to {self.target_marker_id}'
+                        self.report_publisher.publish(report_msg)
+                        # Reset for next evaluation
+                        self.evaluator_message_received = False
+                        self.angle_correction_target_yaw = None
+                    else:
+                        # Spin clockwise (negative angular velocity)
+                        cmd.linear.x = 0.0
+                        cmd.angular.z = -0.5  # Clockwise
+                        self.publisher_.publish(cmd)
+                    return
+                else:
+                    # Angle error <= 10 degrees (or None), we're done with orientation
+                    error_val = self.evaluator_angle_error if self.evaluator_angle_error is not None else 0.0
+                    self.get_logger().info(f'Angle error {error_val:.1f} deg <= 10 deg, orientation complete')
+                    self.stop_robot()
+                    self.state = 'image_analysis'
+                    return
 
         elif self.state == 'image_analysis':
             self.get_logger().info('=== In image_analysis state ===')
