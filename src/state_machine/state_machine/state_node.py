@@ -63,8 +63,8 @@ class ControllerNode(Node):
         self.goal_points = [self.gp1, self.gp2, self.gp3, self.gp4]
         self.extra_distance = 0.35 # meters to overshoot each goal point
         self.check_distance = 1.5 # meters to turn to check for markers on wall
-        self.speed = 5.0 # m/s
-        self.angular_speed = 5.0 # rad/s
+        self.speed = 1.0 # m/s
+        self.angular_speed = 1.0 # rad/s
         self.accumulated_angle = 0.0
         self.returned_to_start = False
 
@@ -184,7 +184,7 @@ class ControllerNode(Node):
             if parts and parts[-1].isdigit():
                 self.target_marker_id = int(parts[-1])
                 self.get_logger().info(f"Mission received: go_to_marker {self.target_marker_id}")
-                self.state = 'GoToMarker'
+                self.state = 'OrientToMarker'
             else:
                 self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
         elif msg.data == "image_analysis":
@@ -473,6 +473,48 @@ class ControllerNode(Node):
             self.publisher_.publish(cmd)
             
             
+        if self.state == 'OrientToMarker':
+            status_msg = String()
+            status_msg.data = 'orienting'
+            self.status_publisher.publish(status_msg)
+            self.get_logger().info('In OrientToMarker state')
+            if self.target_marker_id is None:
+                self.get_logger().warn('No target marker ID specified.')
+            else:
+                marker_pos = self.go_to_marker(self.target_marker_id)
+                if marker_pos is None:
+                    self.get_logger().warn('Target marker not found, skipping.')
+                    self.state = 'ReturnToStart'
+                else:
+                    # Determine Wall of Marker for Goal Point Offset
+                    # Go based on angle from origin to marker position since we know corner locations
+                    # Wall Designations Based On Initial Spawn At (0,0), Facing +X
+                    # Angles: Front Wall: 31 deg to -31 deg, Right Wall: -32 deg to -148 deg, Back Wall: -149 deg to 149 deg, Left Wall: 32 deg to 148 deg
+                    goal_x, goal_y = marker_pos
+                    angle_from_origin = math.degrees(math.atan2(goal_y, goal_x))
+                    if -31 <= angle_from_origin <= 31:
+                        # Front Wall
+                        goal_x -= 0.35
+                    elif -148 <= angle_from_origin <= -32:
+                        # Right Wall
+                        goal_y += 0.35
+                    elif angle_from_origin >= 149 or angle_from_origin <= -149:
+                        # Back Wall
+                        goal_x += 0.35
+                    elif 32 <= angle_from_origin <= 148:
+                        # Left Wall
+                        goal_y -= 0.35
+                    p_orient_cmd = self.p_orient(x, y, yaw, goal_x, goal_y)
+                    yaw_diff = self.angle_diff(math.atan2(goal_y - y, goal_x - x), yaw)
+                    if abs(yaw_diff) <= self.ang_tol:
+                        self.stop_robot()
+                        self.get_logger().info(f'Oriented to marker {self.target_marker_id} at ({goal_x:.2f}, {goal_y:.2f})')
+                        self.state = 'GoToMarker'
+                    else:
+                        cmd.linear.x = p_orient_cmd.linear.x
+                        cmd.angular.z = p_orient_cmd.angular.z
+                        self.publisher_.publish(cmd)
+
 
         if self.state == 'GoToMarker':
             status_msg = String()
@@ -487,11 +529,27 @@ class ControllerNode(Node):
                     self.get_logger().warn('Target marker not found, skipping.')
                     self.state = 'ReturnToStart'
                 else:
+                    # Determine Wall of Marker for Goal Point Offset
+                    # Go based on angle from origin to marker position since we know corner locations
+                    # Wall Designations Based On Initial Spawn At (0,0), Facing +X
+                    # Angles: Front Wall: 31 deg to -31 deg, Right Wall: -32 deg to -148 deg, Back Wall: -149 deg to 149 deg, Left Wall: 32 deg to 148 deg
                     goal_x, goal_y = marker_pos
                     # Store marker goal position for wall orientation
                     self.marker_goal_x = goal_x
                     self.marker_goal_y = goal_y
-
+                    angle_from_origin = math.degrees(math.atan2(goal_y, goal_x))
+                    if -31 <= angle_from_origin <= 31:
+                        # Front Wall
+                        goal_x -= 0.35
+                    elif -148 <= angle_from_origin <= -32:
+                        # Right Wall
+                        goal_y += 0.35
+                    elif angle_from_origin >= 149 or angle_from_origin <= -149:
+                        # Back Wall
+                        goal_x += 0.35
+                    elif 32 <= angle_from_origin <= 148:
+                        # Left Wall
+                        goal_y -= 0.35
                     pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
                     dx = goal_x - x
                     dy = goal_y - y
@@ -520,31 +578,22 @@ class ControllerNode(Node):
         elif self.state == 'OrientToWall': # this is the most hacky crap
             self.get_logger().info('=== In OrientToWall state ===')
             self.stop_robot()
-            
-            # Determine target heading based on marker position
-            # x < -2.75: face left wall (heading = -90 deg = -pi/2)
-            # y < -4.75: face bottom wall (heading = -180 deg = pi or -pi)
-            # x > 2.75: face right wall (heading = 0 deg)
-            # y > 4.75: face top wall (heading = 90 deg = pi/2)
-            
-            if self.marker_goal_x < -2.75:
-                target_heading = -math.pi / 2  # -90 degrees
-                self.get_logger().info('Orienting to LEFT wall (heading = -90 deg)')
-            elif self.marker_goal_y < -4.75:
-                target_heading = math.pi  # -180 degrees (same as 180)
-                self.get_logger().info('Orienting to BOTTOM wall (heading = -180 deg)')
-            elif self.marker_goal_x > 2.75:
-                
-                target_heading = math.pi / 2  # 90 degrees
-                self.get_logger().info('Orienting to RIGHT wall (heading = 90 deg)')
-            elif self.marker_goal_y > 4.75:
-                target_heading = 0.0  # 0 degrees
-                self.get_logger().info('Orienting to TOP wall (heading = 0 deg)')
-            else:
-                # Default: no specific wall, skip orientation
-                self.get_logger().info('Marker not near wall boundary, skipping orientation')
-                self.state = 'image_analysis'
-                return
+            # Determine target heading based on wall designation
+            # Wall Designations Based On Initial Spawn At (0,0), Facing +X
+            # Angles: Front Wall: 31 deg to -31 deg, Right Wall: -32 deg to -148 deg, Back Wall: -149 deg to 149 deg, Left Wall: 32 deg to 148 deg
+            angle_from_origin = math.degrees(math.atan2(self.marker_goal_y, self.marker_goal_x))
+            if -31 <= angle_from_origin <= 31:
+                # Front Wall
+                target_heading = 0.0
+            elif -148 <= angle_from_origin <= -32:
+                # Right Wall
+                target_heading = -math.pi / 2
+            elif angle_from_origin >= 149 or angle_from_origin <= -149:
+                # Back Wall
+                target_heading = math.pi
+            elif 32 <= angle_from_origin <= 148:
+                # Left Wall
+                target_heading = math.pi / 2
             
             # Phase 1: First orient to the predicted wall heading
             if not self.wall_orientation_complete:
@@ -655,7 +704,7 @@ class ControllerNode(Node):
                 search_complete_msg = Bool()
                 search_complete_msg.data = True
                 self.search_complete_pub.publish(search_complete_msg)
-                self.get_logger().info('Search Complete: Detected 6 Markers. Returning To Initial State.')
+                self.get_logger().info('Returning To Initial State.')
                 # (removed duplicate x, y, q, yaw extraction - now using values from above)
                 goal_x = self.init_x
                 goal_y = self.init_y
@@ -668,7 +717,7 @@ class ControllerNode(Node):
                     self.get_logger().info('Returned to Initial Position. Realigning to Initial Yaw.')
                     if abs(self.angle_diff(self.init_yaw, yaw)) <= 0.5:
                         self.stop_robot()
-                        self.get_logger().info('Returned to Initial Orientation. Search Mission Complete.')
+                        self.get_logger().info('Returned to Initial Orientation.')
                         return_msg = String()
                         return_msg.data = 'arrived to origin'
                         self.report_publisher.publish(return_msg)

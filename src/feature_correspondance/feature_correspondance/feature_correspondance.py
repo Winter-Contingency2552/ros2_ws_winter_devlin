@@ -8,7 +8,7 @@ from cv_bridge import CvBridge
 from std_msgs.msg import String, Bool
 import sys
 import torch
-sys.path.append('/home/john/LightGlue')
+sys.path.append('/home/jeff/LightGlue')
 from lightglue import SuperPoint, LightGlue
 from lightglue.utils import load_image, rbd
 
