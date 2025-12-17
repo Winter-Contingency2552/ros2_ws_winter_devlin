@@ -259,91 +259,37 @@ class ControllerNode(Node):
                 goal_x, goal_y = self.goal_points[self.side_index]
                 midpoint_x = (self.checkpoint_x + goal_x) / 2
                 midpoint_y = (self.checkpoint_y + goal_y) / 2
-                quarter_x = (self.checkpoint_x + midpoint_x) / 2
-                quarter_y = (self.checkpoint_y + midpoint_y) / 2
-                three_quarter_x = (midpoint_x + goal_x) / 2
-                three_quarter_y = (midpoint_y + goal_y) / 2
-                if self.side_index == 1 or self.side_index == 3:  # For short sides, check only at midpoint and goal point
-                    if self.wall_checked_1 is False:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, midpoint_x, midpoint_y)
-                        dx = midpoint_x - x
-                        dy = midpoint_y - y
-                    else:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
-                        dx = goal_x - x
-                        dy = goal_y - y
-                else:  # For long sides, check at quarter, midpoint, three-quarter, and goal point
-                    if self.wall_checked_1 is False:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, quarter_x, quarter_y)
-                        dx = quarter_x - x
-                        dy = quarter_y - y
-                    elif self.wall_checked_2 is False:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, midpoint_x, midpoint_y)
-                        dx = midpoint_x - x
-                        dy = midpoint_y - y
-                    elif self.wall_checked_3 is False:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, three_quarter_x, three_quarter_y)
-                        dx = three_quarter_x - x
-                        dy = three_quarter_y - y
-                    else:
-                        pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
-                        dx = goal_x - x
-                        dy = goal_y - y
+                
+                if self.wall_checked_1 is False:
+                    pid_navigate_cmd = self.pid_navigate(x, y, yaw, midpoint_x, midpoint_y)
+                    dx = midpoint_x - x
+                    dy = midpoint_y - y
+                else:
+                    pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
+                    dx = goal_x - x
+                    dy = goal_y - y
                 distance_to_goal = math.sqrt(dx**2 + dy**2)
                 if distance_to_goal <= self.pos_tol:
                     self.stop_robot()
-                    if self.side_index == 1 or self.side_index == 3:  # Short sides
-                        if self.wall_checked_1 is False:
-                            self.wall_checked_1 = True
-                            self.get_logger().info('Reached Midpoint At ({:.2f}, {:.2f}), preparing to check wall.'.format(midpoint_x, midpoint_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        elif self.wall_checked_2 is False:
-                            self.wall_checked_2 = True
-                            self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f}), preparing to check wall.'.format(goal_x, goal_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        else:
-                            self.state = 'OrientCorner'
-                            self.wall_checked_1 = False
-                            self.wall_checked_2 = False
-                            self.checkpoint_x = x
-                            self.checkpoint_y = y
-                            self.checkpoint_yaw = yaw
-                            self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f})'.format(goal_x, goal_y))
-                            self.get_logger().info('State changed to OrientCorner')
-                    else:  # Long sides
-                        if self.wall_checked_1 is False:
-                            self.wall_checked_1 = True
-                            self.get_logger().info('Reached Quarter Point At ({:.2f}, {:.2f}), preparing to check wall.'.format(quarter_x, quarter_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        elif self.wall_checked_2 is False:
-                            self.wall_checked_2 = True
-                            self.get_logger().info('Reached Midpoint At ({:.2f}, {:.2f}), preparing to check wall.'.format(midpoint_x, midpoint_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        elif self.wall_checked_3 is False:
-                            self.wall_checked_3 = True
-                            self.get_logger().info('Reached Three-Quarter Point At ({:.2f}, {:.2f}), preparing to check wall.'.format(three_quarter_x, three_quarter_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        elif self.wall_checked_4 is False:
-                            self.wall_checked_4 = True
-                            self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f}), preparing to check wall.'.format(goal_x, goal_y))
-                            self.state = 'WallCheck'
-                            self.get_logger().info('State changed to WallCheck')
-                        else:
-                            self.state = 'OrientCorner'
-                            self.wall_checked_1 = False
-                            self.wall_checked_2 = False
-                            self.wall_checked_3 = False
-                            self.wall_checked_4 = False
-                            self.checkpoint_x = x
-                            self.checkpoint_y = y
-                            self.checkpoint_yaw = yaw
-                            self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f})'.format(goal_x, goal_y))
-                            self.get_logger().info('State changed to OrientCorner')
+                    if self.wall_checked_1 is False:
+                        self.wall_checked_1 = True
+                        self.get_logger().info('Reached Midpoint At ({:.2f}, {:.2f}), preparing to check wall.'.format(midpoint_x, midpoint_y))
+                        self.state = 'WallCheck'
+                        self.get_logger().info('State changed to WallCheck')
+                    elif self.wall_checked_2 is False:
+                        self.wall_checked_2 = True
+                        self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f}), preparing to check wall.'.format(goal_x, goal_y))
+                        self.state = 'WallCheck'
+                        self.get_logger().info('State changed to WallCheck')
+                    else:
+                        self.state = 'OrientCorner'
+                        self.wall_checked_1 = False
+                        self.wall_checked_2 = False
+                        self.checkpoint_x = x
+                        self.checkpoint_y = y
+                        self.checkpoint_yaw = yaw
+                        self.get_logger().info('Reached Goal Point At ({:.2f}, {:.2f})'.format(goal_x, goal_y))
+                        self.get_logger().info('State changed to OrientCorner')
                 else:
                     cmd.linear.x = pid_navigate_cmd.linear.x
                     cmd.angular.z = pid_navigate_cmd.angular.z
