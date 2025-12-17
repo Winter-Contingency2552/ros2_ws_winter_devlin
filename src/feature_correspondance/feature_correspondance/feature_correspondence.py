@@ -8,7 +8,6 @@ from cv_bridge import CvBridge
 from std_msgs.msg import String, Bool
 import sys
 import torch
-import time as time
 sys.path.append('/home/john/LightGlue')
 from lightglue import SuperPoint, LightGlue
 from lightglue.utils import load_image, rbd
@@ -26,26 +25,12 @@ class FeatureCorrespondence(Node):
         self.create_subscription(Bool, "/run_feature_correspondence", self.run_callback, 10)
         self.create_subscription(Bool, "/run_feature_correspondence_bonus", self.run_bonus_callback, 10)
         self.state_message=self.create_publisher(String, '/robot_report',qos_profile=10 )
-        # publish robot_status so helper nodes (ImageComparisonNode) can enter analyze mode
-        self.status_publisher = self.create_publisher(String, 'robot_status', 10)
         self.completion_publisher = self.create_publisher(Bool, '/feature_correspondence_complete', 10)
-        self.get_logger().info('Publishing to: /robot_report, robot_status, /feature_correspondence_complete')
-        # track last published completion state to avoid spamming the topic with duplicates
-        self._last_completion_state = None
-        # timestamp of last completion publish (seconds since epoch) for simple debounce
-        self._last_completion_time = 0.0
-        # whether a processing run is currently active (prevents repeated "False" publishes)
-        self._processing = False
         self.run=False
         self.run_bonus=False
         self.img1=None
         self.img2=None
-
-        # New params for more robust motion detection
-        self.motion_threshold = 25        # intensity threshold for diff -> mask
-        self.motion_min_pixels = 200      # minimal motion pixels to consider movement
-        self.morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
-
+        
         # Counters to track how many images have been received
         self.img1_count = 0
         self.img2_count = 0
@@ -56,15 +41,9 @@ class FeatureCorrespondence(Node):
         # Create a status timer to periodically log the node's state
         self.status_timer = self.create_timer(5.0, self.log_status)
         
-        # prevent repeated immediate retriggers from spamming processing
-        self._last_run_request_time = 0.0
-        self._run_request_cooldown = 1.0  # seconds to ignore repeated run requests
-        self._last_run_bonus_request_time = 0.0
-        self._run_bonus_request_cooldown = 1.0
-
         self.get_logger().info('Feature Correspondence Node initialized successfully')
         self.get_logger().info('Subscribed to: /image1, /image2, /run_feature_correspondence, /run_feature_correspondence_bonus')
-        self.get_logger().info('Publishing to: /robot_report, robot_status, /feature_correspondence_complete')
+        self.get_logger().info('Publishing to: /robot_report, /feature_correspondence_complete')
 
     def log_status(self):
         """Periodically log the node's current state for debugging"""
@@ -73,26 +52,6 @@ class FeatureCorrespondence(Node):
         self.get_logger().info(f'[STATUS] run={self.run}, run_bonus={self.run_bonus}')
         self.get_logger().info(f'[STATUS] img1={img1_status} (received {self.img1_count} times)')
         self.get_logger().info(f'[STATUS] img2={img2_status} (received {self.img2_count} times)')
-
-    # helper to convert sensor_msgs/Image -> OpenCV BGR numpy array robustly
-    def _imgmsg_to_bgr(self, msg):
-        """
-        Convert ROS Image message to OpenCV BGR numpy array.
-        Handles 'rgb8' and 'bgr8' encodings in incoming messages.
-        """
-        try:
-            enc = getattr(msg, 'encoding', '').lower()
-            # prefer returning a BGR image for OpenCV
-            if 'rgb' in enc and 'bgr' not in enc:
-                # message is RGB; request rgb8 and convert to BGR
-                arr = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-                return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-            else:
-                # message already BGR (or unknown); request bgr8
-                return self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().error(f'_imgmsg_to_bgr conversion failed: {e}')
-            return None
 
     def image1_callback(self, msg):
         self.img1_count += 1
@@ -105,10 +64,7 @@ class FeatureCorrespondence(Node):
         self.get_logger().info(f'    Message data length: {len(msg.data)}')
         self.get_logger().info('========================================')
         try:
-            cv_img = self._imgmsg_to_bgr(msg)
-            if cv_img is None:
-                raise RuntimeError('failed to decode image1')
-            self.img1 = cv_img
+            self.img1 = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             self.get_logger().info(f'Image1 SUCCESSFULLY stored: shape={self.img1.shape}, dtype={self.img1.dtype}')
             self.get_logger().info(f'Image1 pixel range: min={self.img1.min()}, max={self.img1.max()}')
         except Exception as e:
@@ -127,10 +83,7 @@ class FeatureCorrespondence(Node):
         self.get_logger().info(f'    Message data length: {len(msg.data)}')
         self.get_logger().info('========================================')
         try:
-            cv_img = self._imgmsg_to_bgr(msg)
-            if cv_img is None:
-                raise RuntimeError('failed to decode image2')
-            self.img2 = cv_img
+            self.img2 = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             self.get_logger().info(f'Image2 SUCCESSFULLY stored: shape={self.img2.shape}, dtype={self.img2.dtype}')
             self.get_logger().info(f'Image2 pixel range: min={self.img2.min()}, max={self.img2.max()}')
         except Exception as e:
@@ -139,69 +92,29 @@ class FeatureCorrespondence(Node):
             self.get_logger().error(traceback.format_exc())
         
     def run_callback(self,msg):
-        now = time.time()
         self.get_logger().info('========================================')
         self.get_logger().info(f'>>> RECEIVED run_feature_correspondence: {msg.data}')
         self.get_logger().info('========================================')
         if msg.data:
-            # if already processing, ignore duplicate requests
-            if self._processing:
-                self.get_logger().info('Ignoring run request: processing already active')
-                return
-            # cooldown to avoid rapid retriggers
-            if now - self._last_run_request_time < self._run_request_cooldown:
-                self.get_logger().info('Ignoring run request: within cooldown window')
-                return
-            self._last_run_request_time = now
-            self.run = True
+            self.run=True
             self.get_logger().info("Feature correspondence ENABLED - will process on next timer cycle")
             self.get_logger().info(f"Current image status: img1={self.img1 is not None}, img2={self.img2 is not None}")
         else:
-            self.run = False
+            self.run=False
             self.get_logger().info("Feature correspondence DISABLED")
 
     def run_bonus_callback(self,msg):
-        now = time.time()
         self.get_logger().info('========================================')
         self.get_logger().info(f'>>> RECEIVED run_feature_correspondence_bonus: {msg.data}')
         self.get_logger().info('========================================')
         if msg.data:
-            if self._processing:
-                self.get_logger().info('Ignoring bonus run request: processing already active')
-                return
-            if now - self._last_run_bonus_request_time < self._run_bonus_request_cooldown:
-                self.get_logger().info('Ignoring bonus run request: within cooldown window')
-                return
-            self._last_run_bonus_request_time = now
-            self.run_bonus = True
+            self.run_bonus=True
             self.get_logger().info("Feature correspondence BONUS (LightGlue) ENABLED")
             self.get_logger().info(f"Current image status: img1={self.img1 is not None}, img2={self.img2 is not None}")
         else:
-            self.run_bonus = False
+            self.run_bonus=False
             self.get_logger().info("Feature correspondence BONUS DISABLED")
         
-    # Helper to publish completion only when state changes
-    def publish_completion(self, state: bool):
-        """Publish Bool on /feature_correspondence_complete only if state changed."""
-        now = time.time()
-        # if same state, skip
-        if self._last_completion_state == state:
-            self.get_logger().debug(f'Skipping duplicate completion publish: {state}')
-            return
-        # prevent very-rapid toggles (debounce window)
-        if self._last_completion_state is not None and (now - self._last_completion_time) < 0.2:
-            self.get_logger().debug(f'Skipping rapid state change {self._last_completion_state} -> {state} (debounce)')
-            return
-        msg = Bool()
-        msg.data = bool(state)
-        try:
-            self.completion_publisher.publish(msg)
-            self._last_completion_state = state
-            self._last_completion_time = now
-            self.get_logger().info(f'Published {state} to /feature_correspondence_complete')
-        except Exception as e:
-            self.get_logger().error(f'Failed to publish completion state {state}: {e}')
-
     def process_images(self):
         # Log every call to see if timer is running (but only when flags are set)
         if self.run or self.run_bonus:
@@ -215,32 +128,14 @@ class FeatureCorrespondence(Node):
                 self.get_logger().warn("Waiting for both images to be received...")
                 return
             
-            # New early check: if images are identical, abort with a warning and signal completion
-            try:
-                if self.img1.shape == self.img2.shape and np.array_equal(self.img1, self.img2):
-                    self.get_logger().warn('Both images are identical -> aborting processing to avoid false zero-motion result')
-                    # publish completion (avoid spamming using existing helper)
-                    try:
-                        self.publish_completion(True)
-                    except Exception:
-                        pass
-                    # clear images and reset flags so flow can continue when publisher supplies proper pair
-                    self.img1 = None
-                    self.img2 = None
-                    self.run = False
-                    self._processing = False
-                    return
-            except Exception as e:
-                # if comparison fails for any reason, log and continue (fallback to normal processing)
-                self.get_logger().debug(f'Image compare check failed: {e}')
-
             self.get_logger().info(f'Both images available! Processing: img1 shape={self.img1.shape}, img2 shape={self.img2.shape}')
             
-            # Signal that processing is in progress (not complete) — only on transition into processing
-            if not self._processing:
-                self._processing = True
-                self.publish_completion(False)
- 
+            # Signal that processing is in progress (not complete)
+            complete_msg = Bool()
+            complete_msg.data = False
+            self.completion_publisher.publish(complete_msg)
+            self.get_logger().info('Published False to /feature_correspondence_complete (processing started)')
+            
             try:
                 # Display raw images received
                 self.get_logger().info('Displaying raw images received...')
@@ -267,109 +162,62 @@ class FeatureCorrespondence(Node):
                 cv2.imshow("Raw Images Side-by-Side (Left: img1, Right: img2)", side_by_side)
                 
                 self.get_logger().info('Raw images displayed. Press any key to continue processing...')
-                # Do not block waiting for keyboard input; continue automatically after a short delay.
-                cv2.waitKey(1)
-                time.sleep(0.2)
+                cv2.waitKey(0)
                 cv2.destroyWindow("Raw Image 1 (img1)")
                 cv2.destroyWindow("Raw Image 2 (img2)")
                 cv2.destroyWindow("Raw Images Side-by-Side (Left: img1, Right: img2)")
-                self.get_logger().info('Raw image windows closed, continuing automatically with processing...')
+                self.get_logger().info('Raw image windows closed, continuing with processing...')
                 
                 self.get_logger().info('Converting to grayscale...')
                 gray1 = cv2.cvtColor(self.img1, cv2.COLOR_BGR2GRAY)
                 gray2 = cv2.cvtColor(self.img2, cv2.COLOR_BGR2GRAY)
                 self.get_logger().info(f'Grayscale conversion complete: gray1={gray1.shape}, gray2={gray2.shape}')
                 
-                # Compute absolute difference and clean it up to form a motion mask
-                diff = cv2.absdiff(gray1, gray2)
-                diff_blur = cv2.GaussianBlur(diff, (5,5), 0)
-                _, motion_mask = cv2.threshold(diff_blur, self.motion_threshold, 255, cv2.THRESH_BINARY)
-                motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, self.morph_kernel, iterations=1)
-                motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, self.morph_kernel, iterations=2)
+                self.get_logger().info('Applying threshold...')
+                thresh1=cv2.threshold(gray1,50,255,cv2.THRESH_BINARY)[1]
+                thresh2=cv2.threshold(gray2,50,255,cv2.THRESH_BINARY)[1]
+                self.get_logger().info('Threshold applied')
+                
+                self.get_logger().info('Calculating moments for image 1...')
+                center1=cv2.moments(thresh1, binaryImage=True)
 
-                motion_pixels = int(cv2.countNonZero(motion_mask))
-                self.get_logger().info(f'Motion mask computed: motion_pixels={motion_pixels}')
-
-                # If too little motion, treat as zero movement
-                if motion_pixels < self.motion_min_pixels:
-                    self.get_logger().warn(f'Not enough motion detected (pixels={motion_pixels}) -> reporting zero movement')
-                    dx, dy = 0.0, 0.0
+                if center1["m00"] != 0:
+                    c1X = int(center1["m10"] / center1["m00"])
+                    c1Y = int(center1["m01"] / center1["m00"])
+                    self.get_logger().info(f'Image1 centroid: ({c1X}, {c1Y}), m00={center1["m00"]}')
                 else:
-                    # Prefer centroid of the largest motion contour (more robust than global moments)
-                    contours, _ = cv2.findContours(motion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if contours:
-                        largest = max(contours, key=cv2.contourArea)
-                        M = cv2.moments(largest)
-                        if M.get("m00", 0) != 0:
-                            cX = float(M["m10"] / M["m00"])
-                            cY = float(M["m01"] / M["m00"])
-                            self.get_logger().info(f'Largest motion contour centroid: ({cX:.2f}, {cY:.2f}), area={cv2.contourArea(largest):.1f}')
-                        else:
-                            # fallback to mask centroid
-                            M2 = cv2.moments(motion_mask, binaryImage=True)
-                            if M2.get("m00", 0) != 0:
-                                cX = float(M2["m10"] / M2["m00"])
-                                cY = float(M2["m01"] / M2["m00"])
-                            else:
-                                cX, cY = 0.0, 0.0
-                    else:
-                        # No contours found -> fallback to mask centroid
-                        M2 = cv2.moments(motion_mask, binaryImage=True)
-                        if M2.get("m00", 0) != 0:
-                            cX = float(M2["m10"] / M2["m00"])
-                            cY = float(M2["m01"] / M2["m00"])
-                        else:
-                            cX, cY = 0.0, 0.0
+                    c1X, c1Y = 0, 0
+                    self.get_logger().warn('Image1 centroid: m00 is zero, defaulting to (0,0)')
+                
+                self.get_logger().info('Calculating moments for image 2...')
+                center2=cv2.moments(thresh2, binaryImage=True)
 
-                    # For a simple 'movement vector' we compare centroids of binarized objects in each image
-                    # using morphological cleanup on each image (robust version of previous approach).
-                    def cleaned_centroid(gray):
-                        _, t = cv2.threshold(cv2.GaussianBlur(gray, (5,5), 0), 50, 255, cv2.THRESH_BINARY)
-                        t = cv2.morphologyEx(t, cv2.MORPH_OPEN, self.morph_kernel, iterations=1)
-                        t = cv2.morphologyEx(t, cv2.MORPH_CLOSE, self.morph_kernel, iterations=1)
-                        M = cv2.moments(t, binaryImage=True)
-                        if M.get("m00", 0) != 0:
-                            return float(M["m10"]/M["m00"]), float(M["m01"]/M["m00"])
-                        return 0.0, 0.0
+                if center2["m00"] != 0:
+                    c2X = int(center2["m10"] / center2["m00"])
+                    c2Y = int(center2["m01"] / center2["m00"])
+                    self.get_logger().info(f'Image2 centroid: ({c2X}, {c2Y}), m00={center2["m00"]}')
+                else:
+                    c2X, c2Y = 0, 0
+                    self.get_logger().warn('Image2 centroid: m00 is zero, defaulting to (0,0)')
 
-                    c1X, c1Y = cleaned_centroid(gray1)
-                    c2X, c2Y = cleaned_centroid(gray2)
-                    dx = c2X - c1X
-                    dy = c2Y - c1Y
-                    self.get_logger().info(f'Calculated movement from object centroids: dx={dx:.2f}, dy={dy:.2f}')
-
-                # Publish absolute centroid of the detected object (image2) so Evaluator gets pixel coords it expects.
-                # If motion was too small / no centroid found, publish 0.00,0.00.
-                try:
-                    # prefer c2X,c2Y if available (computed from cleaned_centroid)
-                    rx = float(c2X) if ('c2X' in locals()) else 0.0
-                    ry = float(c2Y) if ('c2Y' in locals()) else 0.0
-                except Exception:
-                    rx, ry = 0.0, 0.0
-
-                # Tell the image-analysis helper to enter analyze mode first (robust across evaluator/helper variants)
-                try:
-                    status_msg = String()
-                    status_msg.data = "analyze image"
-                    self.status_publisher.publish(status_msg)
-                    # give subscribers a short moment to process analyze_mode change
-                    time.sleep(0.05)
-                except Exception:
-                    pass
-
-                msg_str = String()
-                msg_str.data = f"movement at x: {rx:.2f}, y: {ry:.2f}"
+                dx = c2X - c1X
+                dy = c2Y - c1Y
+                self.get_logger().info(f'Calculated movement: dx={dx}, dy={dy}')
+                
+                msg_str=String()
+                msg_str.data = f"Movement at x: {dx}, y: {dy}"
                 self.state_message.publish(msg_str)
                 self.get_logger().info(f'Published result to /robot_report: "{msg_str.data}"')
-
+                
                 self.img1=None
                 self.img2=None
                 self.run=False
                 self.get_logger().info('=== Basic feature correspondence complete, images cleared, run flag reset ===')
                 
-                # Signal completion and reset processing flag
-                self.publish_completion(True)
-                self._processing = False
+                # Signal completion
+                complete_msg = Bool()
+                complete_msg.data = True
+                self.completion_publisher.publish(complete_msg)
                 self.get_logger().info('========================================')
                 self.get_logger().info('Published TRUE to /feature_correspondence_complete')
                 self.get_logger().info('========================================')
@@ -378,12 +226,13 @@ class FeatureCorrespondence(Node):
                 self.get_logger().error(f'Error during basic processing: {e}')
                 import traceback
                 self.get_logger().error(traceback.format_exc())
-                # Signal completion even on error so state machine doesn't hang and reset processing flag
-                self.publish_completion(True)
-                self._processing = False
+                # Signal completion even on error so state machine doesn't hang
+                complete_msg = Bool()
+                complete_msg.data = True
+                self.completion_publisher.publish(complete_msg)
                 self.get_logger().warn('Published TRUE to /feature_correspondence_complete (despite error)')
                 self.run = False
- 				
+                
         elif self.run_bonus:
             self.get_logger().info('=== Starting LightGlue feature correspondence processing ===')
             self.get_logger().info(f'Timestamp: {self.get_clock().now().to_msg()}')
@@ -393,11 +242,11 @@ class FeatureCorrespondence(Node):
                 self.get_logger().warn("Waiting for both images to be received...")
                 return
             
-            # Signal that processing is in progress (not complete) — only on transition into processing
-            if not self._processing:
-                self._processing = True
-                self.publish_completion(False)
- 			
+            # Signal that processing is in progress (not complete)
+            complete_msg = Bool()
+            complete_msg.data = False
+            self.completion_publisher.publish(complete_msg)
+            
             try:
                 self.get_logger().info(f'Processing with LightGlue: img1 shape={self.img1.shape}, img2 shape={self.img2.shape}')
                 self.get_logger().info(f'Image1 dtype: {self.img1.dtype}, min={self.img1.min()}, max={self.img1.max()}')
@@ -428,13 +277,11 @@ class FeatureCorrespondence(Node):
                 cv2.imshow("Raw Images Side-by-Side (Left: img1, Right: img2)", side_by_side)
                 
                 self.get_logger().info('Raw images displayed. Press any key to continue processing...')
-                # Do not block waiting for keyboard input; continue automatically after a short delay.
-                cv2.waitKey(1)
-                time.sleep(0.2)
+                cv2.waitKey(0)
                 cv2.destroyWindow("Raw Image 1 (img1)")
                 cv2.destroyWindow("Raw Image 2 (img2)")
                 cv2.destroyWindow("Raw Images Side-by-Side (Left: img1, Right: img2)")
-                self.get_logger().info('Raw image windows closed, continuing automatically with processing...')
+                self.get_logger().info('Raw image windows closed, continuing with processing...')
                 
                 img0 = self.img1
                 img1 = self.img2
@@ -505,6 +352,7 @@ class FeatureCorrespondence(Node):
                 self.get_logger().info(f'After resize: img0={img0.shape}, img1={img1.shape}')
 
                 self.get_logger().info('Loading SuperPoint model...')
+                import time
                 start_time = time.time()
                 extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)
                 superpoint_load_time = time.time() - start_time
@@ -639,9 +487,7 @@ class FeatureCorrespondence(Node):
                 self.get_logger().info('Displaying result window...')
                 cv2.imshow("SuperPoint + LightGlue – 2025 (finally flawless)", result)
                 self.get_logger().info('Waiting for key press to close window...')
-                # Do not block waiting for keyboard input; continue automatically after a short delay.
-                cv2.waitKey(1)
-                time.sleep(0.2)
+                cv2.waitKey(0)
                 cv2.destroyAllWindows()
                 self.get_logger().info('Window closed')
                 
@@ -665,21 +511,24 @@ class FeatureCorrespondence(Node):
                 self.get_logger().info('=== LightGlue feature correspondence complete ===')
                 
                 # Signal completion
-                self.publish_completion(True)
+                complete_msg = Bool()
+                complete_msg.data = True
+                self.completion_publisher.publish(complete_msg)
                 self.get_logger().info('Published completion signal to /feature_correspondence_complete')
- 				
+                
             except Exception as e:
                 self.get_logger().error(f'Error during LightGlue processing: {e}')
                 self.get_logger().error(f'Error type: {type(e).__name__}')
                 import traceback
                 self.get_logger().error('Full traceback:')
                 self.get_logger().error(traceback.format_exc())
-                # Signal completion even on error and reset processing flag
-                self._processing = False
-                self.publish_completion(True)
+                # Signal completion even on error
+                complete_msg = Bool()
+                complete_msg.data = True
+                self.completion_publisher.publish(complete_msg)
                 self.get_logger().warn('Published completion signal despite error')
 
-
+# --- Added: entrypoint so ros2/console script can spin the node --- #
 def main(args=None):
     rclpy.init(args=args)
     node = FeatureCorrespondence()
@@ -696,5 +545,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
-

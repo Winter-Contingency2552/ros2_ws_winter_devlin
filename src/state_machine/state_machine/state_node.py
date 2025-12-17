@@ -190,7 +190,12 @@ class ControllerNode(Node):
                 self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
         elif msg.data == "image_analysis":
             self.get_logger().info("Mission received: image_analysis")
-            self.state = 'image_analysis'
+            # Only reset if not already in image_analysis state
+            if self.state != 'image_analysis':
+                self.state = 'image_analysis'
+                self.image_analysis_sent = False
+                self.image_analysis_count = 0
+                self.feature_correspondence_complete = False
         elif msg.data == "return to origin":
             self.get_logger().info("Mission received: return_to_start")
             self.state = 'ReturnToStart'
@@ -665,28 +670,42 @@ class ControllerNode(Node):
                     self.state = 'image_analysis'
                     return
 
+
+
+
         elif self.state == 'image_analysis':
-            self.get_logger().info('=== In image_analysis state ===')
             self.stop_robot()
             
-            # Check if feature correspondence is complete first
-            if self.feature_correspondence_complete:
-                self.get_logger().info('Feature correspondence complete, transitioning to ReturnToStart')
-                self.feature_correspondence_complete = False  # Reset for next time
-                self.state = 'ReturnToStart'
-                return
-            
-            # Keep publishing status and trigger until completion is received
+            # Publish status to /robot_status
             status_msg = String()
             status_msg.data = 'analyze image'
             self.status_publisher.publish(status_msg)
-            self.get_logger().info('Published "analyze image" to /robot_status')
             
-            run_feature_msg = Bool()
-            run_feature_msg.data = True
-            self.movement_publisher.publish(run_feature_msg)
-            self.get_logger().info('Published True to /run_feature_correspondence, waiting for completion...')
-
+            # Trigger feature correspondence (only once)
+            if not self.image_analysis_sent:
+                self.get_logger().info('=== Entering image_analysis state ===')
+                self.get_logger().info('Published "analyze image" to /robot_status')
+                run_feature_msg = Bool()
+                run_feature_msg.data = True
+                self.movement_publisher.publish(run_feature_msg)
+                self.get_logger().info('Published True to /run_feature_correspondence')
+                self.image_analysis_sent = True
+                self.feature_correspondence_complete = False  # Reset flag
+                self.image_analysis_count = 0  # Reset count here instead
+                return  # Return early to avoid incrementing count on first iteration
+            
+            # Wait for feature correspondence to complete
+            if self.feature_correspondence_complete:
+                self.get_logger().info('Feature correspondence complete, transitioning to ReturnToStart')
+                self.image_analysis_sent = False  # Reset for next time
+                self.image_analysis_count = 0
+                self.feature_correspondence_complete = False
+                #self.state = 'ReturnToStart'
+            else:
+                self.image_analysis_count += 1
+                if self.image_analysis_count % 40 == 0:  # Log every ~2 seconds
+                    self.get_logger().info(f'Waiting for feature correspondence to complete... (count: {self.image_analysis_count})')
+        
         elif self.state == 'ReturnToStart':
             self.stop_robot()
             status_msg = String()
@@ -697,7 +716,6 @@ class ControllerNode(Node):
                 search_complete_msg.data = True
                 self.search_complete_pub.publish(search_complete_msg)
                 self.get_logger().info('Returning To Initial State.')
-                # (removed duplicate x, y, q, yaw extraction - now using values from above)
                 goal_x = self.init_x
                 goal_y = self.init_y
                 pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
@@ -724,13 +742,16 @@ class ControllerNode(Node):
                     cmd.linear.x = pid_navigate_cmd.linear.x
                     cmd.angular.z = pid_navigate_cmd.angular.z
                     self.publisher_.publish(cmd)
+
         elif self.state == 'feature_counting':
-            self._logger.info('=== In feature_counting state ===(bonus)')
-            self.stop_robot()
-            bonus_msg=Bool()
-            bonus_msg.data=True
-            self.bonus_publisher.publish(bonus_msg)
+            self.get_logger().info('=== In feature_counting state ===(bonus)')
+            self.status_publisher.publish(String(data='analyze image2'))
             
+            self.stop_robot()
+            bonus_msg = Bool()
+            bonus_msg.data = True
+            self.bonus_publisher.publish(bonus_msg)
+
 
 def main(args=None):
     rclpy.init(args=args)
