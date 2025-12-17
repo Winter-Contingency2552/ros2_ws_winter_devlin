@@ -216,9 +216,10 @@ class ControllerNode(Node):
 
     def feature_complete_callback(self, msg: Bool):
         """Callback for when feature correspondence completes"""
+        self.get_logger().info(f'Received feature_correspondence_complete: {msg.data}')
         if msg.data:
             self.feature_correspondence_complete = True
-            self.get_logger().info('Received feature correspondence completion signal')
+            self.get_logger().info('Feature correspondence completion flag SET TO TRUE')
 
     def go_to_marker(self, marker_id):
 
@@ -618,34 +619,24 @@ class ControllerNode(Node):
             self.get_logger().info('=== In image_analysis state ===')
             self.stop_robot()
             
-            # Publish status to /robot_status
+            # Check if feature correspondence is complete first
+            if self.feature_correspondence_complete:
+                self.get_logger().info('Feature correspondence complete, transitioning to ReturnToStart')
+                self.feature_correspondence_complete = False  # Reset for next time
+                self.state = 'ReturnToStart'
+                return
+            
+            # Keep publishing status and trigger until completion is received
             status_msg = String()
             status_msg.data = 'analyze image'
             self.status_publisher.publish(status_msg)
+            self.get_logger().info('Published "analyze image" to /robot_status')
             
+            run_feature_msg = Bool()
+            run_feature_msg.data = True
+            self.movement_publisher.publish(run_feature_msg)
+            self.get_logger().info('Published True to /run_feature_correspondence, waiting for completion...')
 
-            
-            # Trigger feature correspondence (only once)
-            if not self.image_analysis_sent:
-                self.get_logger().info('Published "analyze image" to /robot_status')
-                run_feature_msg = Bool()
-                run_feature_msg.data = True
-                self.movement_publisher.publish(run_feature_msg)
-                self.get_logger().info('Published True to /run_feature_correspondence')
-                self.image_analysis_sent = True
-                self.feature_correspondence_complete = False  # Reset flag
-            
-            # Wait for feature correspondence to complete
-            if self.feature_correspondence_complete:
-                self.get_logger().info('Feature correspondence complete, transitioning to ReturnToStart')
-                self.image_analysis_sent = False  # Reset for next time
-                self.image_analysis_count = 0
-                self.feature_correspondence_complete = False
-                self.state = 'ReturnToStart'
-            else:
-                self.image_analysis_count += 1
-                if self.image_analysis_count % 20 == 0:  # Log every ~1 second
-                    self.get_logger().info(f'Waiting for feature correspondence to complete... (count: {self.image_analysis_count})')
         elif self.state == 'ReturnToStart':
             self.stop_robot()
             status_msg = String()
