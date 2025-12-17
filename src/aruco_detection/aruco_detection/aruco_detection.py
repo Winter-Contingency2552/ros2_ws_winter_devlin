@@ -158,7 +158,7 @@ class ArucoDetectorNode(Node):
                     self.get_logger().info(f"Marker ID {marker_id} in world frame: ({wx:.3f}, {wy:.3f}, {wz:.3f})")
                     report_lines.append(f"{marker_id} in position x: {wx}, y: {wy}, z{wz}")
                     report_msg = String()
-                    report_msg.data = "aruco " + "; ".join(report_lines)
+                    report_msg.data = f"aruco {marker_id} in position x: {wx}, y: {wy}, z: {wz}"
                     self.report_pub.publish(report_msg)
 
                     self.get_logger().info(report_msg.data)

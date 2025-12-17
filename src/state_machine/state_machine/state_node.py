@@ -9,7 +9,7 @@ import tf2_ros
 import math
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
 from aruco_interfaces.msg import ArucoMarkerArray
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool,String
 
 class ControllerNode(Node):
     def __init__(self):
@@ -19,8 +19,14 @@ class ControllerNode(Node):
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
         self.search_complete_pub = self.create_publisher(Bool, 'search_complete', 10)
         self.search_ended_pub = self.create_publisher(Bool, 'search_ended', 10)
+        self.report_publisher = self.create_publisher(String, '/robot_report', 10)
+        self.movement_publisher = self.create_publisher(Bool, '/run_feature_correspondence', 10)
+        self.status_publisher = self.create_publisher(String, '/robot_status', 10)
 
         self.sub = self.create_subscription(ArucoMarkerArray, "/aruco/markers", self.marker_callback, 10)
+        self.missions_sub = self.create_subscription(String, "/missions", self.missions_callback, 10)
+        self.feedback_sub = self.create_subscription(String, "/evaluator_message", self.evaluator_callback, 10)
+        self.feature_complete_sub = self.create_subscription(Bool, "/feature_correspondence_complete", self.feature_complete_callback, 10)  # Add this
 
         # TF2 buffer and listener reading world to base_link transform
         self.tf_buffer = Buffer()
@@ -72,6 +78,13 @@ class ControllerNode(Node):
         self.checkpoint_yaw = 0.0
 
         self.get_logger().info('Controller Node has been started.')
+        self.markerArray = None
+        self.target_marker_id = None
+        self.marker_location_from_evaluator = None
+        self.search=True
+        self.image_analysis_sent = False
+        self.image_analysis_count = 0
+        self.feature_correspondence_complete = False  # Add this flag
 
     # ---- Helpful Functions ---- #
     
@@ -139,11 +152,56 @@ class ControllerNode(Node):
     # ---- Primary Loop ---- #
     def marker_callback(self, msg: ArucoMarkerArray):
         # Fist Get Number of Markers Detected
+        self.markerArray = msg
         self.Num_markers_detected = len(msg.markers)
         self.get_logger().info(
             f"Got {self.Num_markers_detected} markers in frame '{msg.header.frame_id}' at stamp {msg.header.stamp.sec}.{msg.header.stamp.nanosec}"
         )
+        return self.markerArray
 
+    def missions_callback(self, msg: String):
+        if msg.data == "search_aruco":
+            self.get_logger().info("Mission received: search_aruco")
+            self.search=True
+        elif msg.data.startswith("move"):
+            self.search=False
+            # Extract the marker ID from the end of the message (e.g., "move to 30" -> 30)
+            parts = msg.data.split()  # Split by whitespace
+            if parts and parts[-1].isdigit():
+                self.target_marker_id = int(parts[-1])
+                self.get_logger().info(f"Mission received: go_to_marker {self.target_marker_id}")
+                self.state = 'GoToMarker'
+            else:
+                self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
+        else:
+            self.get_logger().info(f"Unknown mission received: {msg.data}")
+            self.search=False
+
+    def evaluator_callback(self, msg: String):
+        self.marker_location_from_evaluator = msg.data  
+
+    def feature_complete_callback(self, msg: Bool):
+        """Callback for when feature correspondence completes"""
+        if msg.data:
+            self.feature_correspondence_complete = True
+            self.get_logger().info('Received feature correspondence completion signal')
+
+    def go_to_marker(self, marker_id):
+
+        if not hasattr(self, 'markerArray') or self.markerArray is None:
+            self.get_logger().warn('No markers received yet.')
+            return None
+        
+        for marker in self.markerArray.markers:
+            if marker.id == marker_id:
+                goal_x = marker.pose.pose.position.x
+                goal_y = marker.pose.pose.position.y
+                self.get_logger().info(f'Found marker {marker_id} at ({goal_x:.2f}, {goal_y:.2f})')
+                return (goal_x, goal_y)
+        
+        self.get_logger().warn(f'Marker {marker_id} not found in detected markers.')
+        return None
+        
     def control_loop(self):
         try:
             tf = self.tf_buffer.lookup_transform('world', 'base_link', rclpy.time.Time())
@@ -151,23 +209,28 @@ class ControllerNode(Node):
         except (LookupException, ConnectivityException, ExtrapolationException):
             self.get_logger().warn('TF lookup failed. Retrying...')
             return
-        if self.Num_markers_detected < 6:
+        
+        # Extract TF Values (moved outside the if block)
+        x = tf.transform.translation.x
+        y = tf.transform.translation.y
+        q = tf.transform.rotation
+        yaw = self.yaw_from_quaternion(q)
+        cmd = Twist()
+        
+        if self.Num_markers_detected < 6 and self.search:
             search_complete_msg = Bool()
             search_complete_msg.data = False
             search_ended_msg = Bool()
             search_ended_msg.data = False
             self.search_ended_pub.publish(search_ended_msg)
             self.search_complete_pub.publish(search_complete_msg)
-            # Extract TF Values
-            x = tf.transform.translation.x
-            y = tf.transform.translation.y
-            q = tf.transform.rotation
-            yaw = self.yaw_from_quaternion(q)
-
-            cmd = Twist()
+            # (removed duplicate TF extraction and cmd initialization)
 
             # State Machine Logic
             if self.state == 'Initial':
+                status_msg = String()
+                status_msg.data = 'ready'
+                self.status_publisher.publish(status_msg)
                 self.init_x = x
                 self.init_y = y
                 self.init_yaw = yaw
@@ -428,18 +491,88 @@ class ControllerNode(Node):
 
             # Publish command
             self.publisher_.publish(cmd)
-        else:
+            
+            
+
+        if self.state == 'GoToMarker':
+            status_msg = String()
+            status_msg.data = 'moving'
+            self.status_publisher.publish(status_msg)
+            self.get_logger().info('In GoToMarker state')
+            if self.target_marker_id is None:
+                self.get_logger().warn('No target marker ID specified.')
+            else:   
+                marker_pos = self.go_to_marker(self.target_marker_id)
+                if marker_pos is None:
+                    self.get_logger().warn('Target marker not found, skipping.')
+                    self.state = 'ReturnToStart'  # Changed from 'NextState'
+                else:
+                    goal_x, goal_y = marker_pos
+
+                    pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
+                    dx = goal_x - x
+                    dy = goal_y - y
+                    distance_to_goal = math.sqrt(dx**2 + dy**2)
+                    if distance_to_goal <= self.pos_tol:
+                        self.stop_robot()
+                        self.get_logger().info(f'Reached marker {self.target_marker_id} at ({goal_x:.2f}, {goal_y:.2f})')
+                        report_msg = String()
+                        report_msg.data = f'arrived to {self.target_marker_id}'
+                        self.report_publisher.publish(report_msg)
+                        
+
+                        self.state = 'image_analysis'
+                    else:
+                        cmd.linear.x = pid_navigate_cmd.linear.x
+                        cmd.angular.z = pid_navigate_cmd.angular.z
+                        self.publisher_.publish(cmd)
+
+                        
+                    
+
+        elif self.state == 'image_analysis':
+            self.get_logger().info('=== In image_analysis state ===')
             self.stop_robot()
+            
+            # Publish status to /robot_status
+            status_msg = String()
+            status_msg.data = 'analyze image'
+            self.status_publisher.publish(status_msg)
+            
+
+            
+            # Trigger feature correspondence (only once)
+            if not self.image_analysis_sent:
+                self.get_logger().info('Published "analyze image" to /robot_status')
+                run_feature_msg = Bool()
+                run_feature_msg.data = True
+                self.movement_publisher.publish(run_feature_msg)
+                self.get_logger().info('Published True to /run_feature_correspondence')
+                self.image_analysis_sent = True
+                self.feature_correspondence_complete = False  # Reset flag
+            
+            # Wait for feature correspondence to complete
+            if self.feature_correspondence_complete:
+                self.get_logger().info('Feature correspondence complete, transitioning to ReturnToStart')
+                self.image_analysis_sent = False  # Reset for next time
+                self.image_analysis_count = 0
+                self.feature_correspondence_complete = False
+                self.state = 'ReturnToStart'
+            else:
+                self.image_analysis_count += 1
+                if self.image_analysis_count % 20 == 0:  # Log every ~1 second
+                    self.get_logger().info(f'Waiting for feature correspondence to complete... (count: {self.image_analysis_count})')
+        elif self.state == 'ReturnToStart':
+            self.stop_robot()
+            status_msg = String()
+            status_msg.data = 'returning'
+            self.status_publisher.publish(status_msg)
             if not self.returned_to_start:
                 search_complete_msg = Bool()
                 search_complete_msg.data = True
                 self.search_complete_pub.publish(search_complete_msg)
                 self.get_logger().info('Search Complete: Detected 6 Markers. Returning To Initial State.')
-                x = tf.transform.translation.x
-                y = tf.transform.translation.y
-                q = tf.transform.rotation
-                yaw = self.yaw_from_quaternion(q)
-                cmd = Twist()
+                # (removed duplicate x, y, q, yaw extraction - now using values from above)
                 goal_x = self.init_x
                 goal_y = self.init_y
                 pid_navigate_cmd = self.pid_navigate(x, y, yaw, goal_x, goal_y)
@@ -452,6 +585,9 @@ class ControllerNode(Node):
                     if abs(self.angle_diff(self.init_yaw, yaw)) <= 0.5:
                         self.stop_robot()
                         self.get_logger().info('Returned to Initial Orientation. Search Mission Complete.')
+                        return_msg = String()
+                        return_msg.data = 'arrived to origin'
+                        self.report_publisher.publish(return_msg)
                         self.returned_to_start = True
                         search_ended_msg = Bool()
                         search_ended_msg.data = True
@@ -463,6 +599,7 @@ class ControllerNode(Node):
                     cmd.linear.x = pid_navigate_cmd.linear.x
                     cmd.angular.z = pid_navigate_cmd.angular.z
                     self.publisher_.publish(cmd)
+        
 
 def main(args=None):
     rclpy.init(args=args)
