@@ -16,14 +16,15 @@ class ControllerNode(Node):
     def __init__(self):
         super().__init__('controller_node')
 
-        # Create publisher for cmd_vel
+        # Create publishers
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
         self.search_complete_pub = self.create_publisher(Bool, 'search_complete', 10)
         self.search_ended_pub = self.create_publisher(Bool, 'search_ended', 10)
         self.report_publisher = self.create_publisher(String, '/robot_report', 10)
         self.movement_publisher = self.create_publisher(Bool, '/run_feature_correspondence', 10)
         self.status_publisher = self.create_publisher(String, '/robot_status', 10)
-
+        self.bonus_publisher = self.create_publisher(Bool, '/run_feature_correspondence_bonus', 10) 
+        # Create subscribers
         self.sub = self.create_subscription(ArucoMarkerArray, "/aruco/markers", self.marker_callback, 10)
         self.missions_sub = self.create_subscription(String, "/missions", self.missions_callback, 10)
         self.feedback_sub = self.create_subscription(String, "/evaluator_message", self.evaluator_callback, 10)
@@ -170,7 +171,10 @@ class ControllerNode(Node):
         return self.markerArray
 
     def missions_callback(self, msg: String):
-        if msg.data == "search_aruco":
+        if msg.data == "standby":
+            self.get_logger().info("Mission received: standby")
+            self.state = 'Initial'
+        elif msg.data == "search_aruco":
             self.get_logger().info("Mission received: search_aruco")
             self.search=True
         elif msg.data.startswith("move"):
@@ -183,6 +187,15 @@ class ControllerNode(Node):
                 self.state = 'GoToMarker'
             else:
                 self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
+        elif msg.data == "image_analysis":
+            self.get_logger().info("Mission received: image_analysis")
+            self.state = 'image_analysis'
+        elif msg.data == "return to origin":
+            self.get_logger().info("Mission received: return_to_start")
+            self.state = 'ReturnToStart'
+        elif msg.data == "image_analysis2":
+            self.get_logger().info("Mission received: image_analysis_bonus")
+            self.state = 'feature_counting'
         else:
             self.get_logger().info(f"Unknown mission received: {msg.data}")
             self.search=False
@@ -521,11 +534,12 @@ class ControllerNode(Node):
                 target_heading = math.pi  # -180 degrees (same as 180)
                 self.get_logger().info('Orienting to BOTTOM wall (heading = -180 deg)')
             elif self.marker_goal_x > 2.75:
-                target_heading = 0.0  # 0 degrees
-                self.get_logger().info('Orienting to RIGHT wall (heading = 0 deg)')
-            elif self.marker_goal_y > 4.75:
+                
                 target_heading = math.pi / 2  # 90 degrees
-                self.get_logger().info('Orienting to TOP wall (heading = 90 deg)')
+                self.get_logger().info('Orienting to RIGHT wall (heading = 90 deg)')
+            elif self.marker_goal_y > 4.75:
+                target_heading = 0.0  # 0 degrees
+                self.get_logger().info('Orienting to TOP wall (heading = 0 deg)')
             else:
                 # Default: no specific wall, skip orientation
                 self.get_logger().info('Marker not near wall boundary, skipping orientation')
@@ -669,7 +683,13 @@ class ControllerNode(Node):
                     cmd.linear.x = pid_navigate_cmd.linear.x
                     cmd.angular.z = pid_navigate_cmd.angular.z
                     self.publisher_.publish(cmd)
-        
+        elif self.state == 'feature_counting':
+            self._logger.info('=== In feature_counting state ===(bonus)')
+            self.stop_robot()
+            bonus_msg=Bool()
+            bonus_msg.data=True
+            self.bonus_publisher.publish(bonus_msg)
+            
 
 def main(args=None):
     rclpy.init(args=args)

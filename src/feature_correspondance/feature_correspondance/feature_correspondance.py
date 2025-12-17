@@ -86,8 +86,8 @@ class FeatureCorrespondence(Node):
                 self.get_logger().debug(f'Grayscale conversion complete: gray1={gray1.shape}, gray2={gray2.shape}')
                 
                 self.get_logger().debug('Applying threshold...')
-                thresh1=cv2.threshold(gray1,127,255,cv2.THRESH_BINARY)[1]
-                thresh2=cv2.threshold(gray2,127,255,cv2.THRESH_BINARY)[1]
+                thresh1=cv2.threshold(gray1,50,255,cv2.THRESH_BINARY)[1]
+                thresh2=cv2.threshold(gray2,50,255,cv2.THRESH_BINARY)[1]
                 self.get_logger().debug('Threshold applied')
                 
                 self.get_logger().debug('Calculating moments for image 1...')
