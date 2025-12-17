@@ -67,7 +67,14 @@ class FeatureCorrespondence(Node):
         self.get_logger().info('Publishing to: /robot_report, robot_status, /feature_correspondence_complete')
 
     def log_status(self):
-        """Periodically log the node's current state for debugging"""
+        """Periodically log the node's current state for debugging.
+        Skip verbose startup output until we have something to report
+        (either images received or a run/run_bonus request)."""
+        # Avoid noisy logs right at node startup when nothing has happened yet
+        if not (self.run or self.run_bonus or self.img1_count > 0 or self.img2_count > 0):
+            # nothing relevant to report yet
+            return
+
         img1_status = f"shape={self.img1.shape}" if self.img1 is not None else "None"
         img2_status = f"shape={self.img2.shape}" if self.img2 is not None else "None"
         self.get_logger().info(f'[STATUS] run={self.run}, run_bonus={self.run_bonus}')
@@ -293,9 +300,9 @@ class FeatureCorrespondence(Node):
                 # If too little motion, treat as zero movement
                 if motion_pixels < self.motion_min_pixels:
                     self.get_logger().warn(f'Not enough motion detected (pixels={motion_pixels}) -> reporting zero movement')
-                    dx, dy = 0.0, 0.0
+                    rx, ry = 0.0, 0.0
                 else:
-                    # Prefer centroid of the largest motion contour (more robust than global moments)
+                    # Use the centroid of the motion_mask as the detected motion point.
                     contours, _ = cv2.findContours(motion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     if contours:
                         largest = max(contours, key=cv2.contourArea)
@@ -303,9 +310,8 @@ class FeatureCorrespondence(Node):
                         if M.get("m00", 0) != 0:
                             cX = float(M["m10"] / M["m00"])
                             cY = float(M["m01"] / M["m00"])
-                            self.get_logger().info(f'Largest motion contour centroid: ({cX:.2f}, {cY:.2f}), area={cv2.contourArea(largest):.1f}')
+                            self.get_logger().info(f'Largest motion contour centroid (motion_mask): ({cX:.2f}, {cY:.2f}), area={cv2.contourArea(largest):.1f}')
                         else:
-                            # fallback to mask centroid
                             M2 = cv2.moments(motion_mask, binaryImage=True)
                             if M2.get("m00", 0) != 0:
                                 cX = float(M2["m10"] / M2["m00"])
@@ -313,7 +319,6 @@ class FeatureCorrespondence(Node):
                             else:
                                 cX, cY = 0.0, 0.0
                     else:
-                        # No contours found -> fallback to mask centroid
                         M2 = cv2.moments(motion_mask, binaryImage=True)
                         if M2.get("m00", 0) != 0:
                             cX = float(M2["m10"] / M2["m00"])
@@ -321,38 +326,33 @@ class FeatureCorrespondence(Node):
                         else:
                             cX, cY = 0.0, 0.0
 
-                    # For a simple 'movement vector' we compare centroids of binarized objects in each image
-                    # using morphological cleanup on each image (robust version of previous approach).
-                    def cleaned_centroid(gray):
-                        _, t = cv2.threshold(cv2.GaussianBlur(gray, (5,5), 0), 50, 255, cv2.THRESH_BINARY)
-                        t = cv2.morphologyEx(t, cv2.MORPH_OPEN, self.morph_kernel, iterations=1)
-                        t = cv2.morphologyEx(t, cv2.MORPH_CLOSE, self.morph_kernel, iterations=1)
-                        M = cv2.moments(t, binaryImage=True)
-                        if M.get("m00", 0) != 0:
-                            return float(M["m10"]/M["m00"]), float(M["m01"]/M["m00"])
-                        return 0.0, 0.0
+                    # Use motion centroid directly as the reported motion location.
+                    # Invert vertical coordinate to ensure top-left is (0,0) as requested:
+                    try:
+                        h, w = self.img2.shape[:2]
+                        # raw centroid cX,cY uses image coordinates; compute inverted-y so top-left origin
+                        rx = float(cX)
+                       
+                        ry = float((h - 1) - cY)
+                        self.get_logger().info(f'Using motion centroid: raw ({cX:.2f},{cY:.2f}) -> published (x={rx:.2f}, y={ry:.2f}) with top-left origin')
+                    except Exception:
+                        rx, ry = float(cX), float(cY)
 
-                    c1X, c1Y = cleaned_centroid(gray1)
-                    c2X, c2Y = cleaned_centroid(gray2)
-                    dx = c2X - c1X
-                    dy = c2Y - c1Y
-                    self.get_logger().info(f'Calculated movement from object centroids: dx={dx:.2f}, dy={dy:.2f}')
-
-                # Publish absolute centroid of the detected object (image2) so Evaluator gets pixel coords it expects.
-                # If motion was too small / no centroid found, publish 0.00,0.00.
+                # Clamp published coordinates to valid pixel range of image2
                 try:
-                    # prefer c2X,c2Y if available (computed from cleaned_centroid)
-                    rx = float(c2X) if ('c2X' in locals()) else 0.0
-                    ry = float(c2Y) if ('c2Y' in locals()) else 0.0
+                    h, w = self.img2.shape[:2]
+                    rx = max(0.0, min(rx, float(w - 1)))
+                    ry = max(0.0, min(ry, float(h - 1)))
                 except Exception:
-                    rx, ry = 0.0, 0.0
+                    pass
 
-                # Tell the image-analysis helper to enter analyze mode first (robust across evaluator/helper variants)
+                self.get_logger().info(f'Publishing movement coords (top-left origin): x={rx:.2f}, y={ry:.2f}, image_size=(w={self.img2.shape[1] if self.img2 is not None else "?"}, h={self.img2.shape[0] if self.img2 is not None else "?"})')
+
+                # Tell image-analysis helper to enter analyze mode first
                 try:
                     status_msg = String()
                     status_msg.data = "analyze image"
                     self.status_publisher.publish(status_msg)
-                    # give subscribers a short moment to process analyze_mode change
                     time.sleep(0.05)
                 except Exception:
                     pass

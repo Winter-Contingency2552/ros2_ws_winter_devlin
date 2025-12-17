@@ -88,6 +88,10 @@ class ControllerNode(Node):
         self.image_analysis_count = 0
         self.feature_correspondence_complete = False
 
+        # Waiting logic to allow time for ArUco detections to arrive after mission command
+        self.marker_wait_count = 0
+        self.marker_wait_timeout = 40  # number of control loop iterations to wait (~2s at 0.05s timer)
+
         # Angle correction variables
         self.evaluator_angle_error = None  # Parsed angle error from evaluator (degrees)
         self.evaluator_message_received = False
@@ -179,6 +183,7 @@ class ControllerNode(Node):
             self.get_logger().info("Mission received: search_aruco")
             self.search=True
         elif msg.data.startswith("move"):
+            self.get_logger().info(msg.data)    
             self.search=False
             # Extract the marker ID from the end of the message (e.g., "move to 30" -> 30)
             parts = msg.data.split()  # Split by whitespace
@@ -187,6 +192,8 @@ class ControllerNode(Node):
                 self.get_logger().info(f"Mission received: go_to_marker {self.target_marker_id}")
                 self.speed = 1.0 # m/s
                 self.angular_speed = 1.0 # rad/s
+                # transition to OrientToMarker but reset wait counter so we give the detector time
+                self.marker_wait_count = 0
                 self.state = 'OrientToMarker'
             else:
                 self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
@@ -546,9 +553,19 @@ class ControllerNode(Node):
             else:
                 marker_pos = self.go_to_marker(self.target_marker_id)
                 if marker_pos is None:
-                    self.get_logger().warn('Target marker not found, skipping.')
-                    self.state = 'ReturnToStart'
+                    # allow a short waiting window for the ArUco subscriber to deliver detections
+                    self.marker_wait_count += 1
+                    if self.marker_wait_count < self.marker_wait_timeout:
+                        self.get_logger().info(f'Target marker {self.target_marker_id} not yet seen, waiting ({self.marker_wait_count}/{self.marker_wait_timeout})')
+                        # do not change state yet; give detector time to publish
+                        return
+                    else:
+                        self.get_logger().warn(f'Target marker {self.target_marker_id} not found after waiting -> skipping mission.')
+                        self.marker_wait_count = 0
+                        self.state = 'ReturnToStart'
                 else:
+                    # found marker, reset wait counter and proceed
+                    self.marker_wait_count = 0
                     # Determine Wall of Marker for Goal Point Offset
                     # Go based on angle from origin to marker position since we know corner locations
                     # Wall Designations Based On Initial Spawn At (0,0), Facing +X
