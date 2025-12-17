@@ -15,7 +15,37 @@ import cv2.aruco as aruco
 from cv_bridge import CvBridge
 from tf2_ros import Buffer, TransformListener
 from aruco_interfaces.msg import ArucoMarker, ArucoMarkerArray
+from collections import deque
 
+class MarkerTrack:
+    def __init__(self, win=25):
+        self.samples = deque(maxlen=win)   # each: np.array([x,y,z])
+        self.published = False
+
+    def add(self, p_world, gate_dist=0.6):
+        """Add a sample if it's not a big outlier vs the running median."""
+        p = np.asarray(p_world, dtype=float)
+
+        if len(self.samples) >= 3:
+            med = np.median(np.vstack(self.samples), axis=0)
+            if np.linalg.norm(p - med) > gate_dist:
+                return False  # reject outlier
+
+        self.samples.append(p)
+        return True
+
+    def estimate_and_spread(self):
+        """Return (robust_estimate, spread_m). Spread is RMS radius from median."""
+        pts = np.vstack(self.samples)
+        med = np.median(pts, axis=0)
+        spread = float(np.sqrt(np.mean(np.sum((pts - med) ** 2, axis=1))))
+        return med, spread
+
+    def ready(self, n_min=10, spread_thresh=0.12):
+        if len(self.samples) < n_min:
+            return False
+        _, spread = self.estimate_and_spread()
+        return spread < spread_thresh
 
 class ArucoDetectorNode(Node):
     def __init__(self):
@@ -58,7 +88,18 @@ class ArucoDetectorNode(Node):
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
         #self.aruco_params = aruco.DetectorParameters_create()
         self.aruco_params = aruco.DetectorParameters()
-        self.seen_markers = []
+                # Per-marker tracking (publish once when stable)
+        self.tracks = {}  # marker_id -> MarkerTrack
+        self.declare_parameter('track_window', 25)
+        self.declare_parameter('track_min_samples', 10)
+        self.declare_parameter('track_spread_thresh', 0.12)  # meters
+        self.declare_parameter('track_gate_dist', 0.6)       # meters
+
+        self.track_window = int(self.get_parameter('track_window').value)
+        self.track_min_samples = int(self.get_parameter('track_min_samples').value)
+        self.track_spread_thresh = float(self.get_parameter('track_spread_thresh').value)
+        self.track_gate_dist = float(self.get_parameter('track_gate_dist').value)
+
 
         self.get_logger().info(f"Listening to {image_topic} and {camera_info_topic}")
 
@@ -140,46 +181,70 @@ class ArucoDetectorNode(Node):
             corners, self.marker_length, self.K, self.dist
         )
 
-        # Draw + publish results
+                # Draw + publish results
         aruco.drawDetectedMarkers(frame, corners, ids)
 
-        report_lines = []
         for i, marker_id in enumerate(ids.flatten()):
-            if marker_id not in self.seen_markers:
-                self.seen_markers.append(marker_id)
-                self.get_logger().info(f"New marker detected: ID {marker_id}")
-                x, y, z = tvecs[i][0]  # meters in camera frame
-                report_lines.append(f"id={int(marker_id)} xyz=({x:.3f}, {y:.3f}, {z:.3f})")
+            marker_id = int(marker_id)
 
-                # Transform to world frame
-                world_coords = self.camera_xyz_to_world(x, y, z, stamp_msg=msg.header.stamp)
-                if world_coords is not None:
-                    wx, wy, wz = world_coords
-                    self.get_logger().info(f"Marker ID {marker_id} in world frame: ({wx:.3f}, {wy:.3f}, {wz:.3f})")
-                    report_lines.append(f"{marker_id} in position x: {wx}, y: {wy}, z{wz}")
-                    report_msg = String()
-                    report_msg.data = f"aruco {marker_id} in position x: {wx}, y: {wy}, z: {wz}"
-                    self.report_pub.publish(report_msg)
+            # Transform this observation to world
+            x, y, z = tvecs[i][0]
+            world_coords = self.camera_xyz_to_world(x, y, z, stamp_msg=msg.header.stamp)
+            if world_coords is None:
+                self.get_logger().warn(f"Could not transform marker ID {marker_id} to world frame.")
+                continue
 
-                    self.get_logger().info(report_msg.data)
+            # Get / create track
+            if marker_id not in self.tracks:
+                self.tracks[marker_id] = MarkerTrack(win=self.track_window)
+                self.get_logger().info(f"Tracking started for marker ID {marker_id}")
 
-                    # Publish ArucoMarkerArray
-                    marker = ArucoMarker()
-                    marker.id = int(marker_id)
-                    marker.pose.header.stamp = msg.header.stamp
-                    marker.pose.header.frame_id = msg.header.frame_id
+            track = self.tracks[marker_id]
 
-                    marker.pose.pose.position.x = wx
-                    marker.pose.pose.position.y = wy
-                    marker.pose.pose.position.z = wz
-                    self.aruco_msg.markers.append(marker)
-                    self.pub_markers.publish(self.aruco_msg)
-                else:
-                    self.get_logger().warn(f"Could not transform marker ID {marker_id} to world frame.")
+            # If already published, do nothing (still draw axes for viz)
+            if track.published:
+                cv2.drawFrameAxes(frame, self.K, self.dist, rvecs[i], tvecs[i], 0.1)
+                continue
 
-               
-            # Optional: draw axes on the marker
+            # Add sample (with outlier rejection)
+            accepted = track.add(world_coords, gate_dist=self.track_gate_dist)
+            if not accepted:
+                self.get_logger().debug(f"Rejected outlier for marker {marker_id}: {world_coords}")
+                cv2.drawFrameAxes(frame, self.K, self.dist, rvecs[i], tvecs[i], 0.1)
+                continue
+
+            # If stable, publish ONCE
+            if track.ready(n_min=self.track_min_samples, spread_thresh=self.track_spread_thresh):
+                est, spread = track.estimate_and_spread()
+                wx, wy, wz = float(est[0]), float(est[1]), float(est[2])
+
+                track.published = True
+
+                self.get_logger().info(
+                    f"Marker {marker_id} STABLE (n={len(track.samples)}, spread={spread:.3f}m) "
+                    f"-> world=({wx:.3f}, {wy:.3f}, {wz:.3f})"
+                )
+
+                # Publish String report once
+                report_msg = String()
+                report_msg.data = f"aruco {marker_id} in position x: {wx}, y: {wy}, z: {wz}"
+                self.report_pub.publish(report_msg)
+
+                # Publish ArucoMarkerArray once (append once)
+                marker = ArucoMarker()
+                marker.id = marker_id
+                marker.pose.header.stamp = msg.header.stamp
+                marker.pose.header.frame_id = self.world_frame  # important: world frame now
+                marker.pose.pose.position.x = wx
+                marker.pose.pose.position.y = wy
+                marker.pose.pose.position.z = wz
+
+                self.aruco_msg.markers.append(marker)
+                self.pub_markers.publish(self.aruco_msg)
+
+            # Optional: draw axes
             cv2.drawFrameAxes(frame, self.K, self.dist, rvecs[i], tvecs[i], 0.1)
+
 
         
 
