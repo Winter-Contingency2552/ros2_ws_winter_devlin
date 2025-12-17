@@ -16,6 +16,7 @@ from cv_bridge import CvBridge
 from tf2_ros import Buffer, TransformListener
 from aruco_interfaces.msg import ArucoMarker, ArucoMarkerArray
 from collections import deque
+from rclpy.qos import qos_profile_sensor_data
 
 class MarkerTrack:
     def __init__(self, win=25):
@@ -65,13 +66,19 @@ class ArucoDetectorNode(Node):
         robot_report = self.get_parameter('robot_report').value
 
         # Subscribers / publisher
-        self.image_sub = self.create_subscription(Image, image_topic, self.image_callback, 10)
+        self.image_sub = self.create_subscription(
+            Image,
+            image_topic,
+            self.image_callback,
+            qos_profile_sensor_data
+        )
+
         self.caminfo_sub = self.create_subscription(CameraInfo, camera_info_topic, self.camera_info_callback, 10)
         self.report_pub = self.create_publisher(String, robot_report, 10)
         self.pub_markers = self.create_publisher(ArucoMarkerArray, "/aruco/markers", 10)
 
         # TF2 buffer and listener reading world to base_link transform
-        self.tf_buffer = Buffer()
+        self.tf_buffer = Buffer(cache_time=Duration(seconds=30.0))
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.world_frame = "world"
         self.camera_frame = "camera_link"
@@ -90,9 +97,9 @@ class ArucoDetectorNode(Node):
         self.aruco_params = aruco.DetectorParameters()
                 # Per-marker tracking (publish once when stable)
         self.tracks = {}  # marker_id -> MarkerTrack
-        self.declare_parameter('track_window', 25)
-        self.declare_parameter('track_min_samples', 10)
-        self.declare_parameter('track_spread_thresh', 0.12)  # meters
+        self.declare_parameter('track_window', 40)
+        self.declare_parameter('track_min_samples', 30)
+        self.declare_parameter('track_spread_thresh', 0.08)  # meters
         self.declare_parameter('track_gate_dist', 0.6)       # meters
 
         self.track_window = int(self.get_parameter('track_window').value)
@@ -104,42 +111,74 @@ class ArucoDetectorNode(Node):
         self.get_logger().info(f"Listening to {image_topic} and {camera_info_topic}")
 
     def camera_xyz_to_world(self, x_rel, y_rel, z_rel, stamp_msg=None):
-        # Map your ArUco axes -> camera_link (+X forward, +Y left, +Z up)
-        x_cam = float(z_rel)  # forward
-        y_cam = -1 * float(x_rel)  # left
-        z_cam = -1 * float(y_rel)  # up
+        """
+        Converts ArUco-relative coords to world coords.
 
+        - Axis remap into camera_link (+X forward, +Y left, +Z up)
+        - Uses the image stamp (sim time) for TF
+        - Non-blocking TF queries (timeout 0.0) to avoid lag
+        - Tries a few small "backoff" times to handle TF/image jitter
+        - Returns None if transform isn't available (do not fall back to latest)
+        """
+
+        # --- Axis remap (your current convention) ---
+        x_cam = float(z_rel)          # forward
+        y_cam = -1.0 * float(x_rel)   # left
+        z_cam = -1.0 * float(y_rel)   # up
+
+        # Build PointStamped in camera frame
         p_cam = PointStamped()
         p_cam.header.frame_id = self.camera_frame  # "camera_link"
-        p_cam.header.stamp = stamp_msg if stamp_msg is not None else self.get_clock().now().to_msg()
-        p_cam.point.x, p_cam.point.y, p_cam.point.z = x_cam, y_cam, z_cam
+        p_cam.point.x = x_cam
+        p_cam.point.y = y_cam
+        p_cam.point.z = z_cam
 
-        try:
-            t = rclpy.time.Time.from_msg(p_cam.header.stamp)
+        # Use measurement time if provided, else "now"
+        if stamp_msg is not None:
+            base_t = rclpy.time.Time.from_msg(stamp_msg)
+        else:
+            base_t = self.get_clock().now()
 
-            ok = self.tf_buffer.can_transform(
-                self.world_frame,
-                self.camera_frame,
-                t,
-                timeout=Duration(seconds=0.2),
-            )
-            if not ok:
-                self.get_logger().warn("TF not available at measurement time; falling back to latest TF")
-                p_cam.header.stamp = rclpy.time.Time().to_msg()  # latest
-                t = rclpy.time.Time()
+        # Try a few slightly earlier times (TF often lags the camera stamp a bit)
+        candidate_times = [
+            base_t,
+            base_t - Duration(seconds=0.02),
+            base_t - Duration(seconds=0.05),
+            base_t - Duration(seconds=0.10),
+        ]
 
-            p_world = self.tf_buffer.transform(
-                p_cam,
-                self.world_frame,
-                timeout=Duration(seconds=0.2),
-            )
-            return (p_world.point.x, p_world.point.y, p_world.point.z)
+        for t in candidate_times:
+            try:
+                # Non-blocking availability check
+                if not self.tf_buffer.can_transform(
+                    self.world_frame,
+                    self.camera_frame,
+                    t,
+                    timeout=Duration(seconds=0.0),
+                ):
+                    continue
 
-        except (tf2_ros.ExtrapolationException,
-                tf2_ros.LookupException,
-                tf2_ros.ConnectivityException) as e:
-            self.get_logger().error(f"Transform failed: {e}")
-            return None
+                # Stamp the point at the time we’re using for TF
+                p_cam.header.stamp = t.to_msg()
+
+                # Non-blocking transform call
+                p_world = self.tf_buffer.transform(
+                    p_cam,
+                    self.world_frame,
+                    timeout=Duration(seconds=0.0),
+                )
+                return (p_world.point.x, p_world.point.y, p_world.point.z)
+
+            except (tf2_ros.ExtrapolationException,
+                    tf2_ros.LookupException,
+                    tf2_ros.ConnectivityException):
+                continue
+
+        # If we got here, TF wasn't available at any candidate time
+        return None
+
+
+
 
     def camera_info_callback(self, msg: CameraInfo):
         # msg.k is a 3x3 row-major camera matrix
@@ -155,6 +194,12 @@ class ArucoDetectorNode(Node):
     def image_callback(self, msg: Image):
         if self.K is None or self.dist is None:
             self.get_logger().warn("No CameraInfo received yet (K/dist unknown). Skipping frame.")
+            return
+
+        now = self.get_clock().now()
+        t_img = rclpy.time.Time.from_msg(msg.header.stamp)
+        age_sec = (now - t_img).nanoseconds * 1e-9
+        if age_sec > 0.25:
             return
 
         # Convert ROS Image -> OpenCV BGR image
@@ -191,7 +236,10 @@ class ArucoDetectorNode(Node):
             x, y, z = tvecs[i][0]
             world_coords = self.camera_xyz_to_world(x, y, z, stamp_msg=msg.header.stamp)
             if world_coords is None:
-                self.get_logger().warn(f"Could not transform marker ID {marker_id} to world frame.")
+                self.get_logger().warn(
+                    f"Could not transform marker ID {marker_id} to world frame.",
+                    throttle_duration_sec=2.0
+                )
                 continue
 
             # Get / create track
@@ -207,7 +255,8 @@ class ArucoDetectorNode(Node):
                 continue
 
             # Add sample (with outlier rejection)
-            accepted = track.add(world_coords, gate_dist=self.track_gate_dist)
+            if world_coords is not None:
+                accepted = track.add(world_coords, gate_dist=self.track_gate_dist)
             if not accepted:
                 self.get_logger().debug(f"Rejected outlier for marker {marker_id}: {world_coords}")
                 cv2.drawFrameAxes(frame, self.K, self.dist, rvecs[i], tvecs[i], 0.1)

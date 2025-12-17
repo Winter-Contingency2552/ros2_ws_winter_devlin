@@ -34,25 +34,29 @@ def launch_setup(context, *args, **kwargs):
             package='robot_simulator_cpp',
             executable='odometry_node',
             name='odometry_node',
-            output='screen'
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         ),
         Node(
             package='aruco_detection',
             executable='aruco_detector_node',
             name='aruco_detector_node',
-            output='screen'
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         ),
         Node(
             package='feature_correspondance',
             executable='feature_correspondence_node',
             name='feature_correspondence_node',
-            output='screen'
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         ),
         Node(
             package='state_machine',
             executable='state_node',
             name='controller_node',
-            output='screen'
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         )
     ]
     return nodes
