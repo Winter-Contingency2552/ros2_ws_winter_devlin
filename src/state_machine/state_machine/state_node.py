@@ -63,8 +63,8 @@ class ControllerNode(Node):
         self.goal_points = [self.gp1, self.gp2, self.gp3, self.gp4]
         self.extra_distance = 0.35 # meters to overshoot each goal point
         self.check_distance = 1.5 # meters to turn to check for markers on wall
-        self.speed = 1.0 # m/s
-        self.angular_speed = 1.0 # rad/s
+        self.speed = 6.5 # m/s
+        self.angular_speed = 3.0 # rad/s
         self.accumulated_angle = 0.0
         self.returned_to_start = False
 
@@ -185,6 +185,8 @@ class ControllerNode(Node):
             if parts and parts[-1].isdigit():
                 self.target_marker_id = int(parts[-1])
                 self.get_logger().info(f"Mission received: go_to_marker {self.target_marker_id}")
+                self.speed = 1.0 # m/s
+                self.angular_speed = 1.0 # rad/s
                 self.state = 'OrientToMarker'
             else:
                 self.get_logger().warn(f"Could not parse marker ID from: {msg.data}")
