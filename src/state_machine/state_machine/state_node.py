@@ -100,7 +100,7 @@ class ControllerNode(Node):
         self.angle_correction_target_yaw = None  # Target yaw for 5-degree clockwise spin
         self.wall_orientation_complete = False  # Flag to track if initial wall orientation is done
         self.waiting_for_angle_feedback = False  # Flag to track if we're waiting for evaluator
-        self.walloffset = 0.1  # meters to overshoot each goal point
+        self.walloffset = 0.05  # meters to overshoot each goal point
 
     # ---- Helpful Functions ---- #
     
@@ -183,7 +183,7 @@ class ControllerNode(Node):
             self.get_logger().info("Mission received: search_aruco")
             self.search=True
         elif msg.data.startswith("move"):
-            self.get_logger().info(msg.data)    
+            self.get_logger().info(msg.data+" mission received we must go to one of the markers we found")    
             self.search=False
             # Extract the marker ID from the end of the message (e.g., "move to 30" -> 30)
             parts = msg.data.split()  # Split by whitespace
