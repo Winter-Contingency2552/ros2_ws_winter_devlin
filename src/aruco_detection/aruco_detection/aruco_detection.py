@@ -56,7 +56,7 @@ class ArucoDetectorNode(Node):
 
         # Params (optional but nice)
         self.declare_parameter('image_topic', '/camera1/image_raw')
-        self.declare_parameter('camera_info_topic', '/camera1/camera_info')
+        self.declare_parameter('camera_info_topic', '/camera/camera_info')
         self.declare_parameter('marker_length', 0.2)  # meters
         self.declare_parameter('robot_report', '/robot_report')
 
@@ -98,8 +98,8 @@ class ArucoDetectorNode(Node):
                 # Per-marker tracking (publish once when stable)
         self.tracks = {}  # marker_id -> MarkerTrack
         self.declare_parameter('track_window', 40)
-        self.declare_parameter('track_min_samples', 30)
-        self.declare_parameter('track_spread_thresh', 0.08)  # meters
+        self.declare_parameter('track_min_samples', 8)
+        self.declare_parameter('track_spread_thresh', 0.1)  # meters
         self.declare_parameter('track_gate_dist', 0.6)       # meters
 
         self.track_window = int(self.get_parameter('track_window').value)
