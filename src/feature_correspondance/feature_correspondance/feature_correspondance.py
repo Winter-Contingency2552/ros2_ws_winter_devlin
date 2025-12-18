@@ -173,6 +173,7 @@ class FeatureCorrespondence(Node):
         self.get_logger().info(f'>>> RECEIVED run_feature_correspondence_bonus: {msg.data}')
         self.get_logger().info('========================================')
         if msg.data:
+            self.run=False  
             if self._processing:
                 self.get_logger().info('Ignoring bonus run request: processing already active')
                 return
