@@ -97,6 +97,13 @@ PREREQUISITES
 - A supported ROS 2 distribution installed and sourced
 - colcon build
 - Required system dependencies for Python and C++ packages
+- you will need to run
+  ```
+  git clone https://github.com/cvg/LightGlue.git
+  ```
+- to install lightglue
+- in feature correspondence there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
+  
 
 BUILD AND RUN
 -------------
@@ -118,13 +125,17 @@ BUILD AND RUN
      ```
      ros2 launch robot_bringup final_mission.launch.py
      ```
-
 PACKAGE SUMMARIES
------------------
-- custom_interfaces — contains .srv definitions used by other packages.
-- robot_bringup — provides launch files, the URDF model, RViz configurations, and Python controller/teleop nodes.
-- robot_simulator_cpp — contains the C++ odometry node and other simulation-related C++ code.
-- robot_simulator_py — contains controller node that impliments navigation logic
+---------------
+-aruco_detection: detects ArUco markers from a camera stream; publishes human-readable reports and marker counts for downstream nodes.
+-aruco_interfaces: defines custom message types for ArUco data (ArucoMarker.msg, ArucoMarkerArray.msg) used by vision packages.
+-custom_interfaces: contains service definitions used across the workspace (e.g., ResetPosition.srv) for simulation/control utilities.
+-feature_correspondance: compares two image streams to find matched features (SURF/ORB), detects movement/correspondences, and publishes movement coordinates.
+-robot_bringup: provides launch files, the URDF model, RViz configurations, and related resources to start the simulated robot and sensor/TF publishers.
+-robot_simulator_cpp: contains C++ example code (publisher/odometry examples) and package scaffolding for C++ nodes.
+-robot_simulator_py: contains the TF-based controller_node.py that implements the differential-drive square-path navigation logic and publishes cmd_vel.
+-state_machine: example finite-state machine node and helper code for task-level sequencing and behavior orchestration.
+
 
 TROUBLESHOOTING
 ---------------
@@ -132,4 +143,7 @@ TROUBLESHOOTING
 - Use `ros2 topic list`, `ros2 service list`, and `ros2 node list` to inspect runtime communication.
 - Review console output and files in `log/` for errors and stack traces.
 
+Notes
+---------------
+This workspace heavily intaracts with a evaluator workspace and will not work on its own
 
