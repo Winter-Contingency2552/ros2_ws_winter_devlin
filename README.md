@@ -97,11 +97,10 @@ PREREQUISITES
 - A supported ROS 2 distribution installed and sourced
 - colcon build
 - Required system dependencies for Python and C++ packages
-- you will need to run
+- you will need to run this to install lightglue
   ```
   git clone https://github.com/cvg/LightGlue.git
   ```
-  - to install lightglue
   - in feature correspondence there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
   
 
