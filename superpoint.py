@@ -2,7 +2,7 @@
 # Works on every machine, every Python version, CPU or GPU – Nov 2025
 import sys
 # --- FIX: Add LightGlue to path manually since install failed ---
-sys.path.append('/home/john/LightGlue')
+sys.path.append('/home/jeff/LightGlue')
 # --------------------------------------------------------------
 
 import cv2
@@ -11,8 +11,8 @@ from lightglue import SuperPoint, LightGlue
 from lightglue.utils import load_image, rbd
 
 # ==================== Load images ====================
-img0 = cv2.imread('/home/john/ROBE313_ROS_ws/Evaluator_SM_ws/src/evaluator_package/resource/images/image1_features.png', 0)   # left image
-img1 = cv2.imread('/home/john/ROBE313_ROS_ws/Evaluator_SM_ws/src/evaluator_package/resource/images/image2_features.png', 0)   # right image
+img0 = cv2.imread('/home/jeff/FinalProject/TestImages/image1_features.png', 0)   # left image
+img1 = cv2.imread('/home/jeff/FinalProject/TestImages/image2_features.png', 0)   # right image
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 img0 = torch.from_numpy(img0).float() / 255.0
@@ -91,24 +91,24 @@ for i, j in enumerate(matches0):
 
 print(f"SuperPoint + LightGlue found {len(good_matches)} perfect matches!")
 
-# ==================== Visualization ====================
-left  = cv2.imread("/home/john/ROBE313_ROS_ws/Evaluator_SM_ws/src/evaluator_package/resource/images/image1_features.png")
-right = cv2.imread("/home/john/ROBE313_ROS_ws/Evaluator_SM_ws/src/evaluator_package/resource/images/image2_features.png")
+# ==================== Visualization (fixed) ====================
+left  = cv2.imread('/home/jeff/FinalProject/TestImages/image1_features.png', cv2.IMREAD_COLOR)
+right = cv2.imread('/home/jeff/FinalProject/TestImages/image2_features.png', cv2.IMREAD_COLOR)
 
-kp0 = [cv2.KeyPoint(x=pt[0], y=pt[1], size=6) for pt in kpts0]
-kp1 = [cv2.KeyPoint(x=pt[0], y=pt[1], size=6) for pt in kpts1]
+assert left is not None, "left image failed to load"
+assert right is not None, "right image failed to load"
 
+# Size used during matching (post-resize tensor sizes)
+h0, w0 = int(img0.shape[2]), int(img0.shape[3])
+h1, w1 = int(img1.shape[2]), int(img1.shape[3])
 
-# === ADD THIS BLOCK TO FIX HORIZONTAL SHIFT ===
-# If images were resized differently during processing, we must resize the visualization images to match the tensor sizes
-h0, w0 = img0.shape[2], img0.shape[3]   # size used during matching
-h1, w1 = img1.shape[2], img1.shape[3]
+left_vis  = cv2.resize(left,  (w0, h0), interpolation=cv2.INTER_AREA)
+right_vis = cv2.resize(right, (w1, h1), interpolation=cv2.INTER_AREA)
 
-left_vis  = cv2.resize(left,  (w0, h0))
-right_vis = cv2.resize(right, (w1, h1))
-# ===============================================
+# Build keypoints in the SAME coordinate frame as left_vis/right_vis
+kp0 = [cv2.KeyPoint(float(pt[0]), float(pt[1]), 6) for pt in kpts0]
+kp1 = [cv2.KeyPoint(float(pt[0]), float(pt[1]), 6) for pt in kpts1]
 
-# Then draw (use the resized versions)
 result = cv2.drawMatches(
     left_vis, kp0,
     right_vis, kp1,
@@ -117,12 +117,17 @@ result = cv2.drawMatches(
     flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS
 )
 
-result = cv2.drawMatches(
-    left, kp0, right, kp1, good_matches, None,
-    matchColor=(0, 255, 0),
-    flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS
-    )
+# Debug sanity checks (will catch “all black array” issues immediately)
+print("left_vis dtype/min/max:", left_vis.dtype, left_vis.min(), left_vis.max())
+print("result   dtype/min/max:", result.dtype, result.min(), result.max(), "shape:", result.shape)
 
-cv2.imshow("SuperPoint + LightGlue – 2025 (finally flawless)", result)
+# Always write to disk so we know if it's a GUI backend problem
+out_path = "/home/jeff/FinalProject/TestImages/matches_debug.png"
+cv2.imwrite(out_path, result)
+print("Wrote:", out_path)
+
+# Try imshow (may be black on Wayland; file output above is the truth)
+cv2.namedWindow("matches", cv2.WINDOW_NORMAL)
+cv2.imshow("matches", result)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
