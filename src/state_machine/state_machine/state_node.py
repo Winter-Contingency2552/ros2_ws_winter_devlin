@@ -1,5 +1,6 @@
 import cmd
 from itertools import accumulate
+from os import wait
 from re import search
 from textwrap import wrap
 import rclpy
@@ -281,9 +282,11 @@ class ControllerNode(Node):
                 status_msg = String()
                 status_msg.data = 'ready'
                 self.status_publisher.publish(status_msg)
+                self.stop_robot()
                 self.init_x = x
                 self.init_y = y
                 self.init_yaw = yaw
+                self.stop_robot()
                 self.state = 'InitNavigateToGoal'
                 self.get_logger().info('State changed to InitNavigateToGoal')
 
@@ -824,6 +827,9 @@ class ControllerNode(Node):
             bonus_msg = Bool()
             bonus_msg.data = True
             self.bonus_publisher.publish(bonus_msg)
+            run_feature_msg=Bool()
+            run_feature_msg.data=False
+            self.movement_publisher.publish(msg=run_feature_msg)
 
 
 def main(args=None):
