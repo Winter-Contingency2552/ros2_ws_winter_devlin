@@ -16,25 +16,71 @@ Root workspace (ros2_ws_winter_devlin)
 
 ```
 /home/john/ros2_ws_winter_devlin
-├── src
-│   ├── custom_interfaces
-│   │   └── srv/
-│   │   │   └── resetPosition.srv
-│   ├── robot_bringup
-│   │   ├── launch/
-│   │   │   └── robot_simulation.launch.py
-│   │   │   └── robot_teleop.launch.py
-│   │   ├── urdf/
-│   │   └── rviz/
-│   ├── robot_simulator_cpp
-│   │   └── src/
-│   │   │   └── publisher_member_function.cpp
-│   └── robot_simmulator_py
-│   │   └── robot_simmulator_py
-│   │   │   └── controller_node.py
+├── README.md
+├── README_ANSWERS.md
 ├── build/
 ├── install/
-└── log/
+├── log/
+└── src
+├── aruco_detection
+│ ├── aruco_detection
+│ │ └── aruco_detection.py
+│ ├── LICENSE
+│ ├── package.xml
+│ ├── setup.cfg
+│ ├── setup.py
+│ └── test/
+├── aruco_interfaces
+│ ├── CMakeLists.txt
+│ ├── package.xml
+│ └── msg/
+│ ├── ArucoMarker.msg
+│ └── ArucoMarkerArray.msg
+├── custom_interfaces
+│ ├── CMakeLists.txt
+│ ├── package.xml
+│ └── srv/
+│ └── ResetPosition.srv
+├── feature_correspondance
+│ ├── feature_correspondance
+│ │ ├── feature_correspondance.py
+│ │ └── feature_correspondence.py
+│ ├── LICENSE
+│ ├── package.xml
+│ ├── setup.cfg
+│ ├── setup.py
+│ └── test/
+├── robot_bringup
+│ ├── CMakeLists.txt
+│ ├── package.xml
+│ ├── launch/
+│ │ ├── project_test.launch.py
+│ │ ├── robot_simulation.launch.py
+│ │ └── robot_teleop.launch.py
+│ ├── rviz/
+│ │ ├── basic_robot.rviz
+│ │ └── simulation.rviz
+│ ├── sdf/
+│ │ ├── model.config
+│ │ └── model.sdf
+│ └── urdf/
+│ └── robot.urdf
+├── robot_simulator_cpp
+│ ├── CMakeLists.txt
+│ ├── LICENSE
+│ ├── package.xml
+│ └── src/
+│ └── publisher_member_function.cpp
+├── robot_simulator_py
+│ └── robot_simulator_py
+│ └── controller_node.py
+└── state_machine
+├── state_machine
+│ └── state_node.py
+├── LICENSE
+├── package.xml
+├── setup.cfg
+└── setup.py
 ```
 
 
