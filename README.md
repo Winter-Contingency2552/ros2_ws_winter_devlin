@@ -121,21 +121,52 @@ BUILD AND RUN
 3. Launch options
 
 
-   - Finite State Machine simulation (FSM)
+   - Launch command
      ```
      ros2 launch robot_bringup final_mission.launch.py
      ```
 PACKAGE SUMMARIES
 ---------------
--aruco_detection: detects ArUco markers from a camera stream; publishes human-readable reports and marker counts for downstream nodes.
--aruco_interfaces: defines custom message types for ArUco data (ArucoMarker.msg, ArucoMarkerArray.msg) used by vision packages.
--custom_interfaces: contains service definitions used across the workspace (e.g., ResetPosition.srv) for simulation/control utilities.
--feature_correspondance: compares two image streams to find matched features (SURF/ORB), detects movement/correspondences, and publishes movement coordinates.
--robot_bringup: provides launch files, the URDF model, RViz configurations, and related resources to start the simulated robot and sensor/TF publishers.
--robot_simulator_cpp: contains C++ example code (publisher/odometry examples) and package scaffolding for C++ nodes.
--robot_simulator_py: contains the TF-based controller_node.py that implements the differential-drive square-path navigation logic and publishes cmd_vel.
--state_machine: example finite-state machine node and helper code for task-level sequencing and behavior orchestration.
+Brief descriptions of packages in this ROS2 workspace.
 
+- **aruco_detection**  
+  Detects ArUco markers from a camera stream.  
+  - Publishes human-readable marker reports and marker counts for downstream nodes.
+  - Consumes image/TF topics from robot bringup/sensors.
+
+- **aruco_interfaces**  
+  Custom message definitions for ArUco data.  
+  - Messages: `ArucoMarker.msg`, `ArucoMarkerArray.msg`.
+  - Used by vision packages to standardize marker payloads.
+
+- **custom_interfaces**  
+  Shared service definitions for simulation and control utilities.  
+  - Example: `ResetPosition.srv`.
+  - Used across nodes that need simulation/robot control services.
+
+- **feature_correspondance**  
+  Compares two image streams to find matched features (SURF/ORB).  
+  - Detects correspondences and movement.
+  - Publishes matched feature coordinates and movement vectors for downstream processing.
+
+- **robot_bringup**  
+  Robot startup resources and configs.  
+  - Launch files, URDF model, RViz configs.
+  - TF and sensor publisher nodes to initialize the simulated robot environment.
+
+- **robot_simulator_cpp**  
+  C++ examples and scaffolding.  
+  - Example publisher and odometry nodes.
+  - Useful as a template for C++ ROS2 node development.
+
+- **robot_simulator_py**  
+  Python-based TF controller and motion node.  
+  - `controller_node.py` implements differential-drive square-path navigation and publishes `cmd_vel`.
+
+- **state_machine**  
+  Finite-state machine utilities and example node.  
+  - Task-level sequencing and behavior orchestration helpers.
+  - Example implementations to drive higher-level autonomy.
 
 TROUBLESHOOTING
 ---------------
