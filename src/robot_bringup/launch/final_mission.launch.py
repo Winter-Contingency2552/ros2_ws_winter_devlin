@@ -23,13 +23,13 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             parameters=[{'robot_description': urdf}]
         ),
-        # Node(
-        #     package='rviz2',
-        #     executable='rviz2',
-        #     name='rviz2',
-        #     output='screen',
-        #     arguments=['-d', rviz_path]
-        # ),
+        Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            arguments=['-d', rviz_path]
+        ),
         Node(
             package='robot_simulator_cpp',
             executable='odometry_node',
