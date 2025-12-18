@@ -101,8 +101,8 @@ PREREQUISITES
   ```
   git clone https://github.com/cvg/LightGlue.git
   ```
-- to install lightglue
-- in feature correspondence there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
+  - to install lightglue
+  - in feature correspondence there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
   
 
 BUILD AND RUN
