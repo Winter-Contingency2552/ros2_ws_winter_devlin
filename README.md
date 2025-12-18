@@ -112,15 +112,11 @@ BUILD AND RUN
    ```
 
 3. Launch options
-   - Teleoperation
-     ```
-     ros2 launch robot_bringup robot_teleop.launch.py
-     ```
-     After launching, a new terminal may open. Focus that terminal and follow the on-screen keyboard instructions to control the robot. Note: strafing is not supported.
+
 
    - Finite State Machine simulation (FSM)
      ```
-     ros2 launch robot_bringup robot_simulation.launch.py
+     ros2 launch robot_bringup final_mission.launch.py
      ```
 
 PACKAGE SUMMARIES
