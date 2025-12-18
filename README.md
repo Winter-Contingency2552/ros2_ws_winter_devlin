@@ -3,12 +3,6 @@ SIMULATED MOBILE ROBOT - ROS 2 WORKSPACE
 
 A multi-package ROS 2 workspace that creates a simulated mobile robot using C++ and Python nodes. The workspace demonstrates inter-package communication, a custom service interface, URDF-based robot description, and launch-driven simulation workflows.
 
-CONTENTS / HIGH-LEVEL OVERVIEW
-------------------------------
-- custom_interfaces: custom service definition(s) (.srv) that describe service I/O.
-- robot_bringup: launch files, robot URDF, and RViz configuration; also contains the Python controller and teleop launch files.
-- robot_simulator_cpp: C++ nodes (for example, an odometry node) that run in simulation.
-- Additional utilities and configuration files to support simulation and visualization.
 
 PROJECT FOLDER STRUCTURE
 ------------------------
@@ -101,7 +95,7 @@ PREREQUISITES
   ```
   git clone https://github.com/cvg/LightGlue.git
   ```
-  - in feature correspondence there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
+  - in 'feature_correspondence' there is a line of code in the imports that adds it to path, you will have to change this to work on your machine
   
 
 BUILD AND RUN
