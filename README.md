@@ -172,4 +172,34 @@ TROUBLESHOOTING
 Notes
 ---------------
 This workspace heavily intaracts with a evaluator workspace and will not work on its own
+Here is an overview of the code in the repo
+```
+-----------------------------------------------------------------------------------
+Language                         files          blank        comment           code
+-----------------------------------------------------------------------------------
+JSON                                80              0              0          19188
+CMake                              185           1203           1482           8964
+D                                   31              0              0           5662
+Python                              44            810            557           4708
+C                                   16            467            531           3839
+C++                                 17            804            352           3634
+C/C++ Header                        49            653            717           2272
+make                                 7            650            628           1591
+Bourne Shell                        39            227            616           1424
+PowerShell                          25            140            415            963
+zsh                                 15            112            185            471
+INI                                  5            110              0            415
+Bourne Again Shell                  15             97            155            358
+XML                                 11             50              6            349
+YAML                                 2              0              0            294
+Markdown                             2             20              0             97
+TypeScript                          39              0              0             78
+IDL                                  3              8              0             39
+Gencat NLS                           4              1              0              6
+Windows Resource File                1              0              0              1
+-----------------------------------------------------------------------------------
+SUM:                               590           5352           5644          54353
+-----------------------------------------------------------------------------------
+
+```
 
