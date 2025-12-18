@@ -171,8 +171,8 @@ TROUBLESHOOTING
 
 Notes
 ---------------
-This workspace heavily intaracts with a evaluator workspace and will not work on its own
-Here is an overview of the code in the repo
+-This workspace heavily intaracts with a evaluator workspace and will not work on its own
+-Here is an overview of the code in the repo
 ```
 -----------------------------------------------------------------------------------
 Language                         files          blank        comment           code
