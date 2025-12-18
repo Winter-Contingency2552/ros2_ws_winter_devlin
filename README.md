@@ -2,7 +2,7 @@ SIMULATED MOBILE ROBOT - ROS 2 WORKSPACE
 =======================================
 
 A multi-package ROS 2 workspace that creates a simulated mobile robot using C++ and Python nodes. The workspace demonstrates inter-package communication, a custom service interface, URDF-based robot description, and launch-driven simulation workflows.
-
+-an additional standalone file has been added to the repo to demonstrate feature correspondence separate from the full simulation. The image paths will need to be hardcoded for this to run
 
 PROJECT FOLDER STRUCTURE
 ------------------------
